@@ -1,0 +1,65 @@
+package com.truckhire.modules.user.dto;
+
+import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+/**
+ * Update Profile Request DTO — PUT /users/me
+ *
+ * DESIGN DECISION (Partial Update Pattern):
+ * Only non-null fields in this request are applied to the user record.
+ * This means the client can send ONLY the fields they want to change:
+ * { "city": "Bangalore" } ← changes only city, everything else untouched
+ *
+ * WHAT USERS CANNOT CHANGE THEMSELVES:
+ * - email → requires email verification flow (future phase)
+ * - phone → requires OTP verification flow (future phase)
+ * - role → admin-only operation
+ * - status → admin-only operation
+ * - kycVerified → admin-only verification
+ * - password → requires separate change-password endpoint (future)
+ *
+ * All fields are optional (nullable). Validation only runs on non-null values.
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class UpdateProfileRequest {
+
+    @Size(min = 2, max = 255, message = "Name must be between 2 and 255 characters")
+    private String fullname;
+
+    private String dob; // ISO date format "2000-01-15"
+
+    @Size(max = 500, message = "Address must not exceed 500 characters")
+    private String address;
+
+    @Size(max = 100, message = "City must not exceed 100 characters")
+    private String city;
+
+    @Size(max = 100, message = "State must not exceed 100 characters")
+    private String state;
+
+    @Size(max = 100, message = "Country must not exceed 100 characters")
+    private String country;
+
+    @Size(max = 10, message = "Zipcode must not exceed 10 characters")
+    private String zipcode;
+
+    // ── Bank details (for OWNER settlement payouts) ──
+    @Size(max = 255, message = "Bank account name must not exceed 255 characters")
+    private String bankAccountName;
+
+    @Size(max = 50, message = "Bank account number must not exceed 50 characters")
+    private String bankAccountNumber;
+
+    @Size(max = 20, message = "IFSC code must not exceed 20 characters")
+    private String bankIfscCode;
+
+    @Size(max = 255, message = "Bank name must not exceed 255 characters")
+    private String bankName;
+}
