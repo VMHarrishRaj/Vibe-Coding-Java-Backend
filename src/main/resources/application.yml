@@ -1,0 +1,90 @@
+# ═══════════════════════════════════════════════════
+# TruckHire - Application Configuration
+# ═══════════════════════════════════════════════════
+# This is the MAIN config file. It sets the active profile
+# and defines settings shared across ALL environments.
+#
+# Spring loads configs in this order (later overrides earlier):
+#   1. application.yml           ← this file (defaults)
+#   2. application-dev.yml       ← dev profile overrides
+#   3. application-prod.yml      ← prod profile overrides
+#   4. Environment variables     ← highest priority
+# ═══════════════════════════════════════════════════
+
+spring:
+  application:
+    name: truckhire
+
+  # Active profile: controls which application-{profile}.yml is loaded
+  # Override with: SPRING_PROFILES_ACTIVE=prod (env variable)
+  profiles:
+    active: dev
+
+  # ── JPA / Hibernate ──
+  jpa:
+    # Don't auto-create tables — Flyway handles schema
+    hibernate:
+      ddl-auto: validate
+    # Show SQL in console (useful for debugging)
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        # Use the modern PostgreSQL dialect
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    # Delay DB connection until first query (faster startup)
+    open-in-view: false
+
+  # ── Flyway (Database Migrations) ──
+  flyway:
+    enabled: true
+    # Where migration scripts live
+    locations: classpath:db/migration
+    # Naming: V1__description.sql, V2__description.sql
+    baseline-on-migrate: true
+
+  # ── Multipart File Upload ──
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  # ── Jackson (JSON Serialization) ──
+  jackson:
+    # Dates as "2026-03-03T14:00:00Z" instead of timestamps
+    serialization:
+      write-dates-as-timestamps: false
+    # Don't fail if JSON has extra fields not in the DTO
+    deserialization:
+      fail-on-unknown-properties: false
+    # Skip null fields in JSON responses
+    default-property-inclusion: non_null
+
+# ── Server ──
+server:
+  port: 8080
+  servlet:
+    context-path: /api/v1
+
+# ── Actuator (Health Checks) ──
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+
+# ── Custom App Properties ──
+# These are our own properties, not Spring's.
+# We'll bind them to a @ConfigurationProperties class later.
+app:
+  jwt:
+    secret: ${JWT_SECRET:truckhire-dev-secret-key-change-in-production-minimum-256-bits-long}
+    access-token-expiration-ms: 900000       # 15 minutes
+    refresh-token-expiration-ms: 604800000   # 7 days
+  cors:
+    allowed-origins: http://localhost:3000,http://localhost:5173
+  file-storage:
+    upload-dir: ./uploads

@@ -1,0 +1,53 @@
+# ═══════════════════════════════════════════════════
+# Docker Compose - TruckHire Dev Environment
+# ═══════════════════════════════════════════════════
+#
+# WHAT THIS DOES:
+# Starts PostgreSQL and Redis in Docker containers
+# so you don't need to install them on your machine.
+#
+# HOW TO USE:
+#   docker compose up -d       ← Start in background
+#   docker compose down        ← Stop
+#   docker compose logs -f     ← Watch logs
+#
+# NOTE: Requires Docker Desktop installed.
+#       If not using Docker, install PostgreSQL and Redis directly.
+# ═══════════════════════════════════════════════════
+
+services:
+  # ── PostgreSQL Database ──
+  postgres:
+    image: postgres:15-alpine
+    container_name: truckhire-postgres
+    environment:
+      POSTGRES_DB: truckhire_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"           # host:container
+    volumes:
+      - postgres_data:/var/lib/postgresql/data   # Persist data across restarts
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis Cache ──
+  redis:
+    image: redis:7-alpine
+    container_name: truckhire-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:

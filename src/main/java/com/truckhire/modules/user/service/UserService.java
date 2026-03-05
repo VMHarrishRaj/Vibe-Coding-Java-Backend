@@ -1,0 +1,366 @@
+package com.truckhire.modules.user.service;
+
+import com.truckhire.common.dto.PagedResponse;
+import com.truckhire.common.exception.BusinessException;
+import com.truckhire.common.exception.ResourceNotFoundException;
+import com.truckhire.modules.auth.dto.AuthResponse;
+import com.truckhire.modules.auth.service.JwtService;
+import com.truckhire.modules.user.dto.*;
+import com.truckhire.modules.user.entity.Role;
+import com.truckhire.modules.user.entity.User;
+import com.truckhire.modules.user.entity.UserStatus;
+import com.truckhire.modules.user.repository.RoleRepository;
+import com.truckhire.modules.user.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+/**
+ * User Service — business logic for profile and admin user operations.
+ *
+ * DESIGN DECISIONS:
+ *
+ * 1. RELOAD FROM DB IN SERVICE (not using filter-cached user):
+ * Controllers pass the user ID from SecurityContext.
+ * The service reloads the user within its own transaction.
+ * This ensures we always work with the latest DB state and
+ * proper transaction boundaries (ACID-compliant reads/writes).
+ *
+ * 2. PARTIAL UPDATE PATTERN:
+ * updateMyProfile only modifies fields that are non-null in the request.
+ * If a field is null, it's left unchanged. This allows the client to
+ * send { "city": "Bangalore" } without wiping out their name, address, etc.
+ *
+ * 3. ADMIN GUARDS:
+ * - Cannot suspend yourself (prevents admin lockout)
+ * - Cannot suspend the last active admin (system integrity)
+ * - Guards are enforced in the service, not the controller
+ *
+ * 4. CREATE-ADMIN REUSES EXISTING INFRASTRUCTURE:
+ * - Same PasswordEncoder as registration
+ * - Same duplicate email/phone checks
+ * - Returns AuthResponse (consistent with register endpoint)
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class UserService {
+
+    private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
+
+    // ═══════════════════════════════════════
+    // USER PROFILE OPERATIONS
+    // ═══════════════════════════════════════
+
+    /**
+     * Get the authenticated user's full profile.
+     *
+     * @param userId The ID from SecurityContext (set by JwtAuthFilter)
+     * @return Full profile response
+     */
+    @Transactional(readOnly = true)
+    public UserProfileResponse getMyProfile(UUID userId) {
+        User user = findActiveUserById(userId);
+        return mapToProfileResponse(user);
+    }
+
+    /**
+     * Update the authenticated user's profile (partial update).
+     *
+     * Only non-null fields in the request are applied.
+     * Email, phone, role, status are NOT user-editable.
+     *
+     * @param userId  The ID from SecurityContext
+     * @param request Fields to update (nulls are ignored)
+     * @return Updated profile
+     */
+    @Transactional
+    public UserProfileResponse updateMyProfile(UUID userId, UpdateProfileRequest request) {
+        User user = findActiveUserById(userId);
+
+        // ── Apply only non-null fields ──
+        if (request.getFullname() != null) {
+            user.setFullname(request.getFullname().trim());
+        }
+        if (request.getDob() != null) {
+            user.setDob(LocalDate.parse(request.getDob()));
+        }
+        if (request.getAddress() != null) {
+            user.setAddress(request.getAddress());
+        }
+        if (request.getCity() != null) {
+            user.setCity(request.getCity());
+        }
+        if (request.getState() != null) {
+            user.setState(request.getState());
+        }
+        if (request.getCountry() != null) {
+            user.setCountry(request.getCountry());
+        }
+        if (request.getZipcode() != null) {
+            user.setZipcode(request.getZipcode());
+        }
+        // ── Bank details (partial update) ──
+        if (request.getBankAccountName() != null) {
+            user.setBankAccountName(request.getBankAccountName());
+        }
+        if (request.getBankAccountNumber() != null) {
+            user.setBankAccountNumber(request.getBankAccountNumber());
+        }
+        if (request.getBankIfscCode() != null) {
+            user.setBankIfscCode(request.getBankIfscCode());
+        }
+        if (request.getBankName() != null) {
+            user.setBankName(request.getBankName());
+        }
+
+        User savedUser = userRepository.save(user);
+        log.info("Profile updated: userId={}", savedUser.getId());
+        return mapToProfileResponse(savedUser);
+    }
+
+    // ═══════════════════════════════════════
+    // ADMIN OPERATIONS
+    // ═══════════════════════════════════════
+
+    /**
+     * List all users with optional filtering (admin-only).
+     *
+     * Supports filtering by:
+     * - role: "ADMIN", "OWNER", "RENTER"
+     * - status: "ACTIVE", "SUSPENDED", "PENDING_VERIFICATION"
+     * - Both (intersection)
+     * - Neither (all non-deleted users)
+     *
+     * Soft-deleted users are always excluded.
+     */
+    @Transactional(readOnly = true)
+    public PagedResponse<AdminUserListResponse> getAllUsers(
+            String role, String status, Pageable pageable) {
+
+        Page<User> userPage;
+
+        if (role != null && status != null) {
+            UserStatus userStatus = parseStatus(status);
+            userPage = userRepository.findByRole_NameAndStatusAndDeletedAtIsNull(
+                    role.toUpperCase(), userStatus, pageable);
+        } else if (role != null) {
+            userPage = userRepository.findByRole_NameAndDeletedAtIsNull(
+                    role.toUpperCase(), pageable);
+        } else if (status != null) {
+            UserStatus userStatus = parseStatus(status);
+            userPage = userRepository.findByStatusAndDeletedAtIsNull(userStatus, pageable);
+        } else {
+            userPage = userRepository.findByDeletedAtIsNull(pageable);
+        }
+
+        return PagedResponse.<AdminUserListResponse>builder()
+                .content(userPage.getContent().stream()
+                        .map(this::mapToAdminListResponse)
+                        .collect(Collectors.toList()))
+                .pageNumber(userPage.getNumber())
+                .pageSize(userPage.getSize())
+                .totalElements(userPage.getTotalElements())
+                .totalPages(userPage.getTotalPages())
+                .last(userPage.isLast())
+                .build();
+    }
+
+    /**
+     * Get a single user's full profile (admin-only).
+     */
+    @Transactional(readOnly = true)
+    public UserProfileResponse getUserById(UUID userId) {
+        User user = findActiveUserById(userId);
+        return mapToProfileResponse(user);
+    }
+
+    /**
+     * Activate a user (set status → ACTIVE).
+     *
+     * Use cases:
+     * - Activate a PENDING_VERIFICATION owner after KYC review
+     * - Reactivate a SUSPENDED user
+     */
+    @Transactional
+    public void activateUser(UUID userId) {
+        User user = findActiveUserById(userId);
+
+        if (user.getStatus() == UserStatus.ACTIVE) {
+            throw new BusinessException("ALREADY_ACTIVE", "User is already active");
+        }
+
+        user.setStatus(UserStatus.ACTIVE);
+        userRepository.save(user);
+        log.info("User activated: userId={}, previousStatus={}", userId, user.getStatus());
+    }
+
+    /**
+     * Suspend a user (set status → SUSPENDED).
+     *
+     * GUARDS:
+     * 1. Cannot suspend yourself (prevents admin lockout)
+     * 2. Cannot suspend the last active admin (system integrity)
+     *
+     * Suspended users cannot log in (enforced in AuthService.login).
+     */
+    @Transactional
+    public void suspendUser(UUID userId, UUID adminId) {
+        // ── Guard 1: Cannot suspend yourself ──
+        if (userId.equals(adminId)) {
+            throw new BusinessException("SELF_SUSPEND",
+                    "You cannot suspend your own account");
+        }
+
+        User user = findActiveUserById(userId);
+
+        if (user.getStatus() == UserStatus.SUSPENDED) {
+            throw new BusinessException("ALREADY_SUSPENDED", "User is already suspended");
+        }
+
+        // ── Guard 2: Cannot suspend the last active admin ──
+        if (Role.ADMIN.equals(user.getRole().getName())) {
+            long activeAdminCount = userRepository.countActiveAdmins();
+            if (activeAdminCount <= 1) {
+                throw new BusinessException("LAST_ADMIN",
+                        "Cannot suspend the last active admin. Create another admin first.");
+            }
+        }
+
+        user.setStatus(UserStatus.SUSPENDED);
+        userRepository.save(user);
+        log.info("User suspended: userId={}, by adminId={}", userId, adminId);
+    }
+
+    /**
+     * Create a new admin user (admin-only).
+     *
+     * Reuses the same validation and password hashing as registration.
+     * Returns AuthResponse for consistency (JWT + user ID).
+     */
+    @Transactional
+    public AuthResponse createAdmin(CreateAdminRequest request) {
+        // ── Duplicate checks (same as registration) ──
+        if (userRepository.existsByEmail(request.getEmail().toLowerCase().trim())) {
+            throw new BusinessException("EMAIL_TAKEN",
+                    "An account with this email already exists");
+        }
+        if (userRepository.existsByPhone(request.getPhone().trim())) {
+            throw new BusinessException("PHONE_TAKEN",
+                    "An account with this phone number already exists");
+        }
+
+        Role adminRole = roleRepository.findByName(Role.ADMIN)
+                .orElseThrow(() -> new ResourceNotFoundException("Role", "name", Role.ADMIN));
+
+        User admin = User.builder()
+                .role(adminRole)
+                .email(request.getEmail().toLowerCase().trim())
+                .phone(request.getPhone().trim())
+                .passwordHash(passwordEncoder.encode(request.getPassword()))
+                .fullname(request.getFullname().trim())
+                .status(UserStatus.ACTIVE)
+                .kycVerified(false)
+                .build();
+
+        User savedAdmin = userRepository.save(admin);
+        log.info("Admin created: id={}, email={}", savedAdmin.getId(), savedAdmin.getEmail());
+
+        String token = jwtService.generateAccessToken(
+                savedAdmin.getId(), savedAdmin.getEmail(), Role.ADMIN);
+
+        return AuthResponse.builder()
+                .accessToken(token)
+                .tokenType("Bearer")
+                .expiresIn(jwtService.getAccessTokenExpirationSeconds())
+                .user(AuthResponse.UserInfo.builder()
+                        .id(savedAdmin.getId().toString())
+                        .build())
+                .build();
+    }
+
+    // ═══════════════════════════════════════
+    // PRIVATE HELPERS
+    // ═══════════════════════════════════════
+
+    /**
+     * Find a user by ID, ensuring they exist and are not soft-deleted.
+     */
+    private User findActiveUserById(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+
+        if (user.isDeleted()) {
+            throw new ResourceNotFoundException("User", "id", userId);
+        }
+
+        return user;
+    }
+
+    /**
+     * Parse a status string into the UserStatus enum.
+     * Throws BusinessException for invalid values.
+     */
+    private UserStatus parseStatus(String status) {
+        try {
+            return UserStatus.valueOf(status.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException("INVALID_STATUS",
+                    "Invalid status: " + status + ". Must be ACTIVE, SUSPENDED, or PENDING_VERIFICATION");
+        }
+    }
+
+    /**
+     * Map User entity to full profile response.
+     */
+    private UserProfileResponse mapToProfileResponse(User user) {
+        return UserProfileResponse.builder()
+                .id(user.getId().toString())
+                .fullname(user.getFullname())
+                .email(user.getEmail())
+                .phone(user.getPhone())
+                .role(user.getRole().getName())
+                .status(user.getStatus().name())
+                .dob(user.getDob() != null ? user.getDob().toString() : null)
+                .address(user.getAddress())
+                .city(user.getCity())
+                .state(user.getState())
+                .country(user.getCountry())
+                .zipcode(user.getZipcode())
+                .kycVerified(user.isKycVerified())
+                .profileImageUrl(user.getProfileImageUrl())
+                .bankAccountName(user.getBankAccountName())
+                .bankAccountNumber(user.getBankAccountNumber())
+                .bankIfscCode(user.getBankIfscCode())
+                .bankName(user.getBankName())
+                .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null)
+                .build();
+    }
+
+    /**
+     * Map User entity to condensed admin list response.
+     */
+    private AdminUserListResponse mapToAdminListResponse(User user) {
+        return AdminUserListResponse.builder()
+                .id(user.getId().toString())
+                .fullname(user.getFullname())
+                .email(user.getEmail())
+                .phone(user.getPhone())
+                .role(user.getRole().getName())
+                .status(user.getStatus().name())
+                .kycVerified(user.isKycVerified())
+                .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null)
+                .build();
+    }
+}
