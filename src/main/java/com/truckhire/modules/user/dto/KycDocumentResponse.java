@@ -19,6 +19,7 @@ public class KycDocumentResponse {
     private String id;
     private String documentType; // "AADHAAR", "PAN", "LICENSE"
     private String filePath;
+    private String fileUrl;
     private String verificationStatus; // "PENDING", "VERIFIED", "REJECTED"
     private String rejectionReason; // nullable
     private String uploadedAt;

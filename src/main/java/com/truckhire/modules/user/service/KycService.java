@@ -3,6 +3,9 @@ package com.truckhire.modules.user.service;
 import com.truckhire.common.exception.BusinessException;
 import com.truckhire.common.exception.ResourceNotFoundException;
 import com.truckhire.common.storage.FileStorageService;
+import com.truckhire.modules.truck.entity.Truck;
+import com.truckhire.modules.truck.entity.TruckStatus;
+import com.truckhire.modules.truck.repository.TruckRepository;
 import com.truckhire.modules.user.dto.KycDocumentResponse;
 import com.truckhire.modules.user.entity.*;
 import com.truckhire.modules.user.repository.DocumentTypeRepository;
@@ -10,6 +13,7 @@ import com.truckhire.modules.user.repository.UserDocumentRepository;
 import com.truckhire.modules.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -35,10 +39,14 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class KycService {
 
+    @Value("${app.base-url}")
+    private String baseUrl;
+
     private final UserRepository userRepository;
     private final UserDocumentRepository userDocumentRepository;
     private final DocumentTypeRepository documentTypeRepository;
     private final FileStorageService fileStorageService;
+    private final TruckRepository truckRepository;
 
     /**
      * Upload a KYC document for the authenticated owner.
@@ -153,6 +161,54 @@ public class KycService {
         log.info("KYC verified: userId={}, by adminId={}", userId, adminId);
     }
 
+    /**
+     * Admin: Reject KYC for a user.
+     *
+     * Sets all PENDING documents to REJECTED with the given reason.
+     * Clears kyc_verified flag and cascades: owner's APPROVED trucks → INACTIVE.
+     */
+    @Transactional
+    public void rejectKyc(UUID userId, UUID adminId, String reason) {
+        User user = findUserById(userId);
+
+        if (user.isKycVerified()) {
+            throw new BusinessException("KYC_ALREADY_VERIFIED",
+                    "Cannot reject KYC for a user whose KYC is already verified");
+        }
+
+        List<UserDocument> documents = userDocumentRepository.findByUserId(userId);
+        if (documents.isEmpty()) {
+            throw new BusinessException("NO_KYC_DOCUMENTS",
+                    "User has no KYC documents to reject");
+        }
+
+        // Mark all PENDING documents as REJECTED with reason
+        OffsetDateTime now = OffsetDateTime.now();
+        for (UserDocument doc : documents) {
+            if (doc.getVerificationStatus() == VerificationStatus.PENDING) {
+                doc.setVerificationStatus(VerificationStatus.REJECTED);
+                doc.setRejectionReason(reason);
+                doc.setVerifiedAt(now);
+            }
+        }
+        userDocumentRepository.saveAll(documents);
+
+        // Clear KYC flag
+        user.setKycVerified(false);
+        userRepository.save(user);
+
+        // Cascade: set owner's APPROVED trucks → INACTIVE
+        List<Truck> approvedTrucks = truckRepository.findByOwnerIdAndStatusAndDeletedAtIsNull(
+                userId, TruckStatus.APPROVED);
+        if (!approvedTrucks.isEmpty()) {
+            approvedTrucks.forEach(t -> t.setStatus(TruckStatus.INACTIVE));
+            truckRepository.saveAll(approvedTrucks);
+            log.info("Cascaded KYC rejection: {} trucks set INACTIVE for userId={}", approvedTrucks.size(), userId);
+        }
+
+        log.info("KYC rejected: userId={}, by adminId={}, reason={}", userId, adminId, reason);
+    }
+
     // ── Private helpers ──
 
     private User findUserById(UUID userId) {
@@ -169,6 +225,7 @@ public class KycService {
                 .id(doc.getId().toString())
                 .documentType(doc.getDocumentType().getName())
                 .filePath(doc.getFilePath())
+                .fileUrl(baseUrl + "/api/v1/files/" + doc.getFilePath())
                 .verificationStatus(doc.getVerificationStatus().name())
                 .rejectionReason(doc.getRejectionReason())
                 .uploadedAt(doc.getUploadedAt() != null ? doc.getUploadedAt().toString() : null)

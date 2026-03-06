@@ -35,7 +35,11 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     boolean existsByEmail(String email);
 
+    boolean existsByEmailAndDeletedAtIsNull(String email);
+
     boolean existsByPhone(String phone);
+
+    boolean existsByPhoneAndDeletedAtIsNull(String phone);
 
     // ── Admin list (Phase 3) — all exclude soft-deleted ──
 

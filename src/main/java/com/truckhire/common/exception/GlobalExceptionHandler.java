@@ -82,7 +82,12 @@ public class GlobalExceptionHandler {
         log.warn("Validation failed: {}", errors);
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
-                .body(ApiResponse.error("VALIDATION_FAILED", "Input validation failed"));
+                .body(ApiResponse.<Map<String, String>>builder()
+                        .success(false)
+                        .error("VALIDATION_FAILED")
+                        .message("Input validation failed")
+                        .data(errors)
+                        .build());
     }
 
     /**

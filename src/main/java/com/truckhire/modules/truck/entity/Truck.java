@@ -83,4 +83,7 @@ public class Truck extends BaseAuditEntity {
 
     @Column(columnDefinition = "TEXT")
     private String description;
+
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
 }

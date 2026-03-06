@@ -244,6 +244,70 @@ public class UserService {
     }
 
     /**
+     * Register a new OWNER or RENTER on behalf of a user (admin-only).
+     *
+     * POST /admin/users
+     *
+     * A fixed temporary password is used for all admin-registered users.
+     * The password is returned in the response for the admin to share out-of-band.
+     * NOTE (future — email notification): Send via SMTP and remove temporaryPassword
+     * from the response body once email delivery is confirmed working.
+     */
+    @Transactional
+    public AdminCreateUserResponse createUser(AdminCreateUserRequest request) {
+        // ── Soft-delete-aware duplicate checks ──
+        if (userRepository.existsByEmailAndDeletedAtIsNull(request.getEmail().toLowerCase().trim())) {
+            throw new BusinessException("EMAIL_TAKEN", "An account with this email already exists");
+        }
+        if (userRepository.existsByPhoneAndDeletedAtIsNull(request.getPhone().trim())) {
+            throw new BusinessException("PHONE_TAKEN", "An account with this phone number already exists");
+        }
+
+        // ── Validate role ──
+        String roleName = request.getRole().toUpperCase();
+        Role role = roleRepository.findByName(roleName)
+                .orElseThrow(() -> new ResourceNotFoundException("Role", "name", roleName));
+
+        // ── Fixed temporary password for all admin-registered users ──
+        String temporaryPassword = "Truck@1234";
+
+        // ── Determine initial status ──
+        // Admin-registered users start ACTIVE — admin is vouching for them.
+        // NOTE (future): When RENTER KYC is introduced, change RENTER status to
+        // PENDING_VERIFICATION here and trigger KYC upload flow on first login.
+        // For OWNER, KYC upload is already handled post-login via POST /users/me/kyc.
+        UserStatus initialStatus = UserStatus.ACTIVE;
+
+        // ── Build User entity ──
+        User user = User.builder()
+                .role(role)
+                .email(request.getEmail().toLowerCase().trim())
+                .phone(request.getPhone().trim())
+                .passwordHash(passwordEncoder.encode(temporaryPassword))
+                .fullname(request.getFullname().trim())
+                .status(initialStatus)
+                .kycVerified(false)
+                // NOTE (future — RENTER KYC): When renter KYC is enabled, set
+                // kycVerified = false explicitly and gate login on kycVerified flag.
+                .build();
+
+        User savedUser = userRepository.save(user);
+        log.info("User created by admin: id={}, email={}, role={}",
+                savedUser.getId(), savedUser.getEmail(), roleName);
+
+        return AdminCreateUserResponse.builder()
+                .userId(savedUser.getId().toString())
+                .email(savedUser.getEmail())
+                .role(roleName)
+                .status(initialStatus.name())
+                .temporaryPassword(temporaryPassword)
+                // NOTE (future — email notification): Replace temporaryPassword in response
+                // with an email sent via SMTP (JavaMailSender). Remove from response once
+                // email delivery is confirmed working.
+                .build();
+    }
+
+    /**
      * Create a new admin user (admin-only).
      *
      * Reuses the same validation and password hashing as registration.

@@ -50,11 +50,14 @@ public class RegisterRequest {
     private String role;
 
     // ── Optional profile fields ──
-    private String dob; // ISO date format: "2000-01-15"
+    @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$", message = "DOB must be in YYYY-MM-DD format")
+    private String dob;
+
     private String address;
     private String city;
     private String state;
     private String country;
+
     private String zipcode;
 
     // ── Optional bank details (for OWNER settlement payouts) ──
