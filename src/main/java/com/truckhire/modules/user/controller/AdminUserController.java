@@ -4,6 +4,8 @@ import com.truckhire.common.dto.ApiResponse;
 import com.truckhire.common.dto.PagedResponse;
 import com.truckhire.common.util.SecurityUtils;
 import com.truckhire.modules.auth.dto.AuthResponse;
+import com.truckhire.modules.user.dto.AdminCreateUserRequest;
+import com.truckhire.modules.user.dto.AdminCreateUserResponse;
 import com.truckhire.modules.user.dto.AdminUserListResponse;
 import com.truckhire.modules.user.dto.CreateAdminRequest;
 import com.truckhire.modules.user.dto.KycDocumentResponse;
@@ -89,6 +91,23 @@ public class AdminUserController {
     }
 
     /**
+     * POST /api/v1/admin/users
+     *
+     * Admin registers a new OWNER or RENTER. The user is created immediately as
+     * ACTIVE with a fixed temporary password returned in the response.
+     * NOTE (future): Send temporary password via email (SMTP) instead of returning
+     * it in the response body.
+     */
+    @PostMapping
+    public ResponseEntity<ApiResponse<AdminCreateUserResponse>> createUser(
+            @Valid @RequestBody AdminCreateUserRequest request) {
+
+        AdminCreateUserResponse response = userService.createUser(request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("User registered successfully", response));
+    }
+
+    /**
      * POST /api/v1/admin/users/create-admin
      */
     @PostMapping("/create-admin")
@@ -132,5 +151,20 @@ public class AdminUserController {
         User admin = SecurityUtils.getCurrentUser();
         kycService.verifyKyc(id, admin.getId());
         return ResponseEntity.ok(ApiResponse.success("KYC verified", null));
+    }
+
+    /**
+     * PUT /api/v1/admin/users/{id}/reject-kyc?reason=...
+     *
+     * Reject an owner's KYC. Marks PENDING documents as REJECTED,
+     * clears kyc_verified, and sets owner's APPROVED trucks → INACTIVE.
+     */
+    @PutMapping("/{id}/reject-kyc")
+    public ResponseEntity<ApiResponse<Void>> rejectKyc(
+            @PathVariable UUID id,
+            @RequestParam(required = false, defaultValue = "KYC documents do not meet requirements") String reason) {
+        User admin = SecurityUtils.getCurrentUser();
+        kycService.rejectKyc(id, admin.getId(), reason);
+        return ResponseEntity.ok(ApiResponse.success("KYC rejected", null));
     }
 }

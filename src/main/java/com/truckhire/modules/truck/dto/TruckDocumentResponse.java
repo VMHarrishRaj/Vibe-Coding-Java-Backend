@@ -17,5 +17,6 @@ public class TruckDocumentResponse {
     private String id;
     private String documentType; // "PHOTO", "RC", "INSURANCE", "PERMIT"
     private String filePath;
+    private String fileUrl;
     private String uploadedAt;
 }

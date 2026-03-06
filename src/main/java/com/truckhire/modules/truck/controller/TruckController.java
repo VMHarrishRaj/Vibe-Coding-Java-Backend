@@ -73,6 +73,18 @@ public class TruckController {
     }
 
     /**
+     * PUT /api/v1/trucks/{id}/deactivate
+     * Deactivate an APPROVED truck (owner only).
+     */
+    @PutMapping("/{id}/deactivate")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<ApiResponse<Void>> deactivateTruck(@PathVariable UUID id) {
+        User owner = SecurityUtils.getCurrentUser();
+        truckService.deactivateTruck(owner.getId(), id);
+        return ResponseEntity.ok(ApiResponse.success("Truck deactivated", null));
+    }
+
+    /**
      * DELETE /api/v1/trucks/{id}
      * Soft-delete a truck (owner only).
      */

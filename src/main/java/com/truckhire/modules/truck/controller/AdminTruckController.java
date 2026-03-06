@@ -36,12 +36,14 @@ public class AdminTruckController {
 
     /**
      * GET /api/v1/admin/trucks
+     * Optional: ?status=APPROVED|REJECTED|PENDING_APPROVAL|INACTIVE
      */
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<TruckListResponse>>> getAllTrucks(
+            @RequestParam(required = false) String status,
             @PageableDefault(size = 20) Pageable pageable) {
 
-        PagedResponse<TruckListResponse> trucks = truckService.getAllTrucks(pageable);
+        PagedResponse<TruckListResponse> trucks = truckService.getAllTrucks(status, pageable);
         return ResponseEntity.ok(ApiResponse.success("All trucks retrieved", trucks));
     }
 

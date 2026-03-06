@@ -161,6 +161,14 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- ── DOTENV ── -->
+        <!-- Loads .env file into Spring's property source — dev only, gitignored -->
+        <dependency>
+            <groupId>me.paulschwarz</groupId>
+            <artifactId>spring-dotenv</artifactId>
+            <version>4.0.0</version>
+        </dependency>
+
         <!-- ── TESTING ── -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -193,7 +201,7 @@
                 </configuration>
             </plugin>
 
-            <!-- Maven Compiler Plugin: Configures annotation processors -->
+                <!-- Maven Compiler Plugin: Configures annotation processors -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

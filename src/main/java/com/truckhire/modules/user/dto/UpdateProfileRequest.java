@@ -1,5 +1,6 @@
 package com.truckhire.modules.user.dto;
 
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -33,7 +34,8 @@ public class UpdateProfileRequest {
     @Size(min = 2, max = 255, message = "Name must be between 2 and 255 characters")
     private String fullname;
 
-    private String dob; // ISO date format "2000-01-15"
+    @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$", message = "DOB must be in YYYY-MM-DD format")
+    private String dob;
 
     @Size(max = 500, message = "Address must not exceed 500 characters")
     private String address;
@@ -47,7 +49,6 @@ public class UpdateProfileRequest {
     @Size(max = 100, message = "Country must not exceed 100 characters")
     private String country;
 
-    @Size(max = 10, message = "Zipcode must not exceed 10 characters")
     private String zipcode;
 
     // ── Bank details (for OWNER settlement payouts) ──

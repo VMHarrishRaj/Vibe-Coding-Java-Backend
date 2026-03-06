@@ -14,13 +14,16 @@ import com.truckhire.modules.user.repository.DocumentTypeRepository;
 import com.truckhire.modules.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -41,6 +44,9 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class TruckService {
+
+    @Value("${app.base-url}")
+    private String baseUrl;
 
     private final TruckRepository truckRepository;
     private final TruckDocumentRepository truckDocumentRepository;
@@ -66,8 +72,8 @@ public class TruckService {
         User owner = findOwner(ownerId);
         ensureKycVerified(owner);
 
-        // Check unique registration number
-        if (truckRepository.existsByRegistrationNumber(request.getRegistrationNumber())) {
+        // Check unique registration number (only among non-deleted trucks)
+        if (truckRepository.existsByRegistrationNumberAndDeletedAtIsNull(request.getRegistrationNumber())) {
             throw new BusinessException("REGISTRATION_NUMBER_TAKEN",
                     "A truck with this registration number already exists");
         }
@@ -134,6 +140,24 @@ public class TruckService {
         Truck saved = truckRepository.save(truck);
         log.info("Truck updated: id={}", truckId);
         return mapToResponse(saved);
+    }
+
+    /**
+     * Deactivate an APPROVED truck (owner only).
+     * Only APPROVED trucks can be deactivated — PENDING/REJECTED stay as-is.
+     */
+    @Transactional
+    public void deactivateTruck(UUID ownerId, UUID truckId) {
+        Truck truck = findTruckOwnedBy(truckId, ownerId);
+
+        if (truck.getStatus() != TruckStatus.APPROVED) {
+            throw new BusinessException("TRUCK_NOT_APPROVED",
+                    "Only APPROVED trucks can be deactivated");
+        }
+
+        truck.setStatus(TruckStatus.INACTIVE);
+        truckRepository.save(truck);
+        log.info("Truck deactivated: id={}, owner={}", truckId, ownerId);
     }
 
     /**
@@ -258,11 +282,24 @@ public class TruckService {
     // ═══════════════════════════════════════
 
     /**
-     * Admin: List all trucks (any status).
+     * Admin: List all trucks (any status), optionally filtered by status.
      */
     @Transactional(readOnly = true)
-    public PagedResponse<TruckListResponse> getAllTrucks(Pageable pageable) {
-        Page<Truck> page = truckRepository.findByDeletedAtIsNull(pageable);
+    public PagedResponse<TruckListResponse> getAllTrucks(String status, Pageable pageable) {
+        Page<Truck> page;
+        if (status == null || status.isBlank()) {
+            page = truckRepository.findAllActiveWithOwner(pageable);
+        } else {
+            TruckStatus truckStatus;
+            try {
+                truckStatus = TruckStatus.valueOf(status.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                throw new BusinessException("INVALID_STATUS",
+                        "Invalid truck status: " + status +
+                        ". Must be one of: PENDING_APPROVAL, APPROVED, REJECTED, INACTIVE");
+            }
+            page = truckRepository.findByStatusActiveWithOwnerNoOrder(truckStatus, pageable);
+        }
         return buildPagedResponse(page);
     }
 
@@ -271,7 +308,7 @@ public class TruckService {
      */
     @Transactional(readOnly = true)
     public PagedResponse<TruckListResponse> getPendingTrucks(Pageable pageable) {
-        Page<Truck> page = truckRepository.findByStatusAndDeletedAtIsNullOrderByCreatedAtDesc(
+        Page<Truck> page = truckRepository.findByStatusActiveWithOwner(
                 TruckStatus.PENDING_APPROVAL, pageable);
         return buildPagedResponse(page);
     }
@@ -306,6 +343,7 @@ public class TruckService {
         }
 
         truck.setStatus(TruckStatus.REJECTED);
+        truck.setRejectionReason(reason);
         truckRepository.save(truck);
         log.info("Truck rejected: id={}, by adminId={}, reason={}",
                 truckId, adminId, reason);
@@ -370,8 +408,8 @@ public class TruckService {
                 .registrationNumber(truck.getRegistrationNumber())
                 .model(truck.getModel())
                 .make(truck.getMake())
-                .pricePerDay(truck.getPricePerDay().toString())
-                .costPerMile(truck.getCostPerMile() != null ? truck.getCostPerMile().toString() : null)
+                .pricePerDay(truck.getPricePerDay())
+                .costPerMile(truck.getCostPerMile())
                 .locationCity(truck.getLocationCity())
                 .latitude(truck.getLatitude())
                 .longitude(truck.getLongitude())
@@ -379,24 +417,26 @@ public class TruckService {
                 .torque(truck.getTorque())
                 .mileageTotal(truck.getMileageTotal())
                 .status(truck.getStatus().name())
+                .rejectionReason(truck.getRejectionReason())
                 .description(truck.getDescription())
                 .createdAt(truck.getCreatedAt() != null ? truck.getCreatedAt().toString() : null)
                 .build();
     }
 
-    private TruckListResponse mapToListResponse(Truck truck) {
+    private TruckListResponse mapToListResponse(Truck truck, String coverPhotoUrl) {
         return TruckListResponse.builder()
                 .id(truck.getId().toString())
                 .vehicleType(truck.getVehicleType().getName())
                 .registrationNumber(truck.getRegistrationNumber())
                 .model(truck.getModel())
                 .make(truck.getMake())
-                .pricePerDay(truck.getPricePerDay().toString())
+                .pricePerDay(truck.getPricePerDay())
                 .locationCity(truck.getLocationCity())
                 .capacityTons(truck.getCapacityTons())
                 .status(truck.getStatus().name())
                 .ownerName(truck.getOwner().getFullname())
                 .createdAt(truck.getCreatedAt() != null ? truck.getCreatedAt().toString() : null)
+                .coverPhotoUrl(coverPhotoUrl)
                 .build();
     }
 
@@ -405,14 +445,30 @@ public class TruckService {
                 .id(doc.getId().toString())
                 .documentType(doc.getDocumentType().getName())
                 .filePath(doc.getFilePath())
+                .fileUrl(baseUrl + "/api/v1/files/" + doc.getFilePath())
                 .uploadedAt(doc.getUploadedAt() != null ? doc.getUploadedAt().toString() : null)
                 .build();
     }
 
     private PagedResponse<TruckListResponse> buildPagedResponse(Page<Truck> page) {
+        List<UUID> truckIds = page.getContent().stream()
+                .map(Truck::getId)
+                .collect(Collectors.toList());
+
+        // Build truckId -> coverPhotoUrl map in one query (no N+1)
+        Map<UUID, String> coverPhotos = new HashMap<>();
+        if (!truckIds.isEmpty()) {
+            List<Object[]> rows = truckDocumentRepository.findFirstPhotoPerTruck(truckIds);
+            for (Object[] row : rows) {
+                UUID truckId = (UUID) row[0];
+                // Only keep the first result per truck (query ordered by uploadedAt ASC)
+                coverPhotos.putIfAbsent(truckId, baseUrl + "/api/v1/files/" + row[1]);
+            }
+        }
+
         return PagedResponse.<TruckListResponse>builder()
                 .content(page.getContent().stream()
-                        .map(this::mapToListResponse)
+                        .map(t -> mapToListResponse(t, coverPhotos.get(t.getId())))
                         .collect(Collectors.toList()))
                 .pageNumber(page.getNumber())
                 .pageSize(page.getSize())

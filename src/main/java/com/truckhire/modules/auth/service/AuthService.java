@@ -67,11 +67,11 @@ public class AuthService {
     @Transactional
     public AuthResponse register(RegisterRequest request) {
 
-        // ── Step 1: Check for duplicate email/phone ──
-        if (userRepository.existsByEmail(request.getEmail())) {
+        // ── Step 1: Check for duplicate email/phone (exclude soft-deleted users) ──
+        if (userRepository.existsByEmailAndDeletedAtIsNull(request.getEmail())) {
             throw new BusinessException("EMAIL_TAKEN", "An account with this email already exists");
         }
-        if (userRepository.existsByPhone(request.getPhone())) {
+        if (userRepository.existsByPhoneAndDeletedAtIsNull(request.getPhone())) {
             throw new BusinessException("PHONE_TAKEN", "An account with this phone number already exists");
         }
 

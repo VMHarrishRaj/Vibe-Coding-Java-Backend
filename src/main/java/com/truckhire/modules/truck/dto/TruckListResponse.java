@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
+
 /**
  * Condensed truck DTO for list/search views.
  */
@@ -19,10 +21,11 @@ public class TruckListResponse {
     private String registrationNumber;
     private String model;
     private String make;
-    private String pricePerDay;
+    private BigDecimal pricePerDay;
     private String locationCity;
     private Integer capacityTons;
     private String status;
     private String ownerName;
     private String createdAt;
+    private String coverPhotoUrl; // nullable — first PHOTO document URL, null if no photos uploaded
 }

@@ -19,13 +19,12 @@ spring:
       - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
 
   # ── PostgreSQL Connection ──
-  # You need PostgreSQL running on localhost:5432
-  # Create the database first:
-  #   CREATE DATABASE truckhire_dev;
+  # Company PostgreSQL server
+  # Set DB_USERNAME and DB_PASSWORD as environment variables before running.
   datasource:
-    url: jdbc:postgresql://localhost:5432/truckhire_dev
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:postgres}
+    url: jdbc:postgresql://35.225.235.66:5432/db_truck_rental
+    username: ${DB_USERNAME:usr_truck}
+    password: ${DB_PASSWORD}
     # HikariCP connection pool (Spring Boot default)
     hikari:
       maximum-pool-size: 10

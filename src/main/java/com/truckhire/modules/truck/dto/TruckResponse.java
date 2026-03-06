@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
+
 /**
  * Response DTO for full truck detail — GET /trucks/{id}
  */
@@ -25,8 +27,8 @@ public class TruckResponse {
     private String make;
 
     // ── Pricing ──
-    private String pricePerDay;
-    private String costPerMile;
+    private BigDecimal pricePerDay;
+    private BigDecimal costPerMile;
 
     // ── Location ──
     private String locationCity;
@@ -40,6 +42,7 @@ public class TruckResponse {
 
     // ── Status ──
     private String status; // "PENDING_APPROVAL", "APPROVED", "REJECTED", "INACTIVE"
+    private String rejectionReason;
     private String description;
 
     // ── Metadata ──

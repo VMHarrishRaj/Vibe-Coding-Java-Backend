@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -63,6 +64,12 @@ public class LocalFileStorageService implements FileStorageService {
         // Validate file
         if (file.isEmpty()) {
             throw new BusinessException("EMPTY_FILE", "Cannot store an empty file");
+        }
+
+        // Validate MIME type — only allow JPEG, PNG, and PDF
+        String contentType = file.getContentType();
+        if (contentType == null || !List.of("image/jpeg", "image/png", "application/pdf").contains(contentType)) {
+            throw new BusinessException("INVALID_FILE_TYPE", "Only JPEG, PNG, and PDF files are allowed");
         }
 
         String originalFilename = StringUtils.cleanPath(
