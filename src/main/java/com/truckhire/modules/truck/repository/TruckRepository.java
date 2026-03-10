@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -48,6 +49,38 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
 
     // For KYC rejection cascade: find owner's APPROVED trucks
     List<Truck> findByOwnerIdAndStatusAndDeletedAtIsNull(UUID ownerId, TruckStatus status);
+
+    // ── Enhanced public search (Phase 5) ──
+    // Returns APPROVED, INACTIVE, and PENDING_APPROVAL trucks (not REJECTED).
+    // Availability enrichment (AVAILABLE / RENTED / UNAVAILABLE) is done in
+    // the service layer after this query runs — one extra query per page, not N+1.
+    // All filter params are optional — passing null skips that condition.
+    // Sorting is handled by the Pageable passed from the service layer.
+    @Query("""
+            SELECT t FROM Truck t
+            JOIN FETCH t.owner
+            JOIN FETCH t.vehicleType
+            WHERE t.status IN ('APPROVED', 'INACTIVE', 'PENDING_APPROVAL')
+              AND t.deletedAt IS NULL
+              AND (:city IS NULL OR LOWER(t.locationCity) = LOWER(:city))
+              AND (:vehicleType IS NULL OR t.vehicleType.name = :vehicleType)
+              AND (:minPrice IS NULL OR t.pricePerDay >= :minPrice)
+              AND (:maxPrice IS NULL OR t.pricePerDay <= :maxPrice)
+              AND (:minCapacity IS NULL OR t.capacityTons >= :minCapacity)
+            """)
+    Page<Truck> searchPublicTrucks(
+            @Param("city") String city,
+            @Param("vehicleType") String vehicleType,
+            @Param("minPrice") BigDecimal minPrice,
+            @Param("maxPrice") BigDecimal maxPrice,
+            @Param("minCapacity") Integer minCapacity,
+            Pageable pageable);
+
+    // ── Owner dashboard counts (M7) ──
+    // Returns [status, count] pairs for all non-deleted trucks owned by ownerId.
+    // Using GROUP BY instead of N separate count queries — one DB round-trip.
+    @Query("SELECT t.status, COUNT(t) FROM Truck t WHERE t.owner.id = :ownerId AND t.deletedAt IS NULL GROUP BY t.status")
+    List<Object[]> countTrucksByStatusForOwner(@Param("ownerId") UUID ownerId);
 
     // Admin list with JOIN FETCH to avoid N+1 (H5)
     @Query("SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType WHERE t.deletedAt IS NULL")

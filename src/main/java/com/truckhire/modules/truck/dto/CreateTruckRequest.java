@@ -36,6 +36,8 @@ public class CreateTruckRequest {
     @DecimalMin(value = "0.01", message = "Price per day must be greater than 0")
     private BigDecimal pricePerDay;
 
+    @NotNull(message = "Cost per mile is required")
+    @DecimalMin(value = "0.0", message = "Cost per mile cannot be negative")
     private BigDecimal costPerMile;
 
     @NotBlank(message = "Location city is required")

@@ -3,6 +3,7 @@ package com.truckhire.modules.user.controller;
 import com.truckhire.common.dto.ApiResponse;
 import com.truckhire.common.util.SecurityUtils;
 import com.truckhire.modules.user.dto.KycDocumentResponse;
+import com.truckhire.modules.user.dto.UpdateBankRequest;
 import com.truckhire.modules.user.dto.UpdateProfileRequest;
 import com.truckhire.modules.user.dto.UserProfileResponse;
 import com.truckhire.modules.user.entity.User;
@@ -66,6 +67,23 @@ public class UserController {
                 currentUser.getId(), request);
 
         return ResponseEntity.ok(ApiResponse.success("Profile updated", updatedProfile));
+    }
+
+    /**
+     * PUT /api/v1/users/me/bank
+     *
+     * Update only the authenticated user's bank details.
+     * All fields are optional — only non-null fields are updated.
+     */
+    @PutMapping("/me/bank")
+    public ResponseEntity<ApiResponse<UserProfileResponse>> updateMyBankDetails(
+            @Valid @RequestBody UpdateBankRequest request) {
+
+        User currentUser = SecurityUtils.getCurrentUser();
+        UserProfileResponse updatedProfile = userService.updateMyBankDetails(
+                currentUser.getId(), request);
+
+        return ResponseEntity.ok(ApiResponse.success("Bank details updated", updatedProfile));
     }
 
     // ═══════════════════════════════════════

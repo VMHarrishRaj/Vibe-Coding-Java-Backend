@@ -130,6 +130,36 @@ public class UserService {
         return mapToProfileResponse(savedUser);
     }
 
+    /**
+     * Update only the authenticated user's bank details.
+     *
+     * PUT /users/me/bank
+     *
+     * Partial update — only non-null fields are applied.
+     * Profile fields (name, city, etc.) are untouched.
+     */
+    @Transactional
+    public UserProfileResponse updateMyBankDetails(UUID userId, UpdateBankRequest request) {
+        User user = findActiveUserById(userId);
+
+        if (request.getBankAccountName() != null) {
+            user.setBankAccountName(request.getBankAccountName());
+        }
+        if (request.getBankAccountNumber() != null) {
+            user.setBankAccountNumber(request.getBankAccountNumber());
+        }
+        if (request.getBankIfscCode() != null) {
+            user.setBankIfscCode(request.getBankIfscCode());
+        }
+        if (request.getBankName() != null) {
+            user.setBankName(request.getBankName());
+        }
+
+        User savedUser = userRepository.save(user);
+        log.info("Bank details updated: userId={}", savedUser.getId());
+        return mapToProfileResponse(savedUser);
+    }
+
     // ═══════════════════════════════════════
     // ADMIN OPERATIONS
     // ═══════════════════════════════════════

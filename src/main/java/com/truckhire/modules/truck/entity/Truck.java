@@ -54,7 +54,7 @@ public class Truck extends BaseAuditEntity {
     @Column(name = "price_per_day", nullable = false, precision = 12, scale = 2)
     private BigDecimal pricePerDay;
 
-    @Column(name = "cost_per_mile", precision = 10, scale = 2)
+    @Column(name = "cost_per_mile", precision = 10, scale = 2, nullable = false)
     private BigDecimal costPerMile;
 
     @Column(name = "location_city", nullable = false, length = 255)

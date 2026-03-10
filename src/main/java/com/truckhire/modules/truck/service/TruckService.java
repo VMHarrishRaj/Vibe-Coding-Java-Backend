@@ -4,6 +4,10 @@ import com.truckhire.common.dto.PagedResponse;
 import com.truckhire.common.exception.BusinessException;
 import com.truckhire.common.exception.ResourceNotFoundException;
 import com.truckhire.common.storage.FileStorageService;
+import com.truckhire.modules.booking.entity.Booking;
+import com.truckhire.modules.booking.entity.BookingStatus;
+import com.truckhire.modules.booking.repository.BookingRepository;
+import com.truckhire.modules.owner.dto.OwnerDashboardResponse;
 import com.truckhire.modules.truck.dto.*;
 import com.truckhire.modules.truck.entity.*;
 import com.truckhire.modules.truck.repository.*;
@@ -21,6 +25,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,6 +63,7 @@ public class TruckService {
     private final DocumentTypeRepository documentTypeRepository;
     private final UserRepository userRepository;
     private final FileStorageService fileStorageService;
+    private final BookingRepository bookingRepository;
 
     // ═══════════════════════════════════════
     // OWNER OPERATIONS
@@ -224,32 +234,94 @@ public class TruckService {
         return buildPagedResponse(page);
     }
 
+    /**
+     * Get owner dashboard summary.
+     *
+     * Counts trucks per status in one GROUP BY query, then maps results
+     * into the dashboard DTO. Booking and earnings fields are stubbed at 0
+     * until Phase 5/6 are implemented.
+     */
+    @Transactional(readOnly = true)
+    public OwnerDashboardResponse getDashboard(UUID ownerId) {
+        List<Object[]> rows = truckRepository.countTrucksByStatusForOwner(ownerId);
+
+        long approved = 0, pending = 0, rejected = 0, inactive = 0;
+        for (Object[] row : rows) {
+            TruckStatus status = (TruckStatus) row[0];
+            long count = (long) row[1];
+            switch (status) {
+                case APPROVED        -> approved = count;
+                case PENDING_APPROVAL -> pending = count;
+                case REJECTED        -> rejected = count;
+                case INACTIVE        -> inactive = count;
+            }
+        }
+
+        long pendingBookings = bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.PENDING);
+        BigDecimal totalEarnings = bookingRepository.sumTotalAmountByOwnerIdAndCompleted(ownerId);
+
+        return OwnerDashboardResponse.builder()
+                .totalTrucks(approved + pending + rejected + inactive)
+                .approvedTrucks(approved)
+                .pendingTrucks(pending)
+                .rejectedTrucks(rejected)
+                .inactiveTrucks(inactive)
+                .pendingBookings(pendingBookings)
+                .totalEarnings(totalEarnings)
+                .build();
+    }
+
     // ═══════════════════════════════════════
     // PUBLIC OPERATIONS (Renter search)
     // ═══════════════════════════════════════
 
     /**
-     * Search/browse trucks visible to renters.
-     * Only APPROVED trucks are returned.
+     * Search/browse trucks (public).
+     *
+     * Returns APPROVED, INACTIVE, and PENDING_APPROVAL trucks (REJECTED are hidden).
+     * After fetching the page, availability is enriched in one extra batch query:
+     * - APPROVED + no active/upcoming booking → "AVAILABLE"
+     * - APPROVED + CONFIRMED/ACTIVE booking today or future → "RENTED" + rentedUntil
+     * - INACTIVE → "UNAVAILABLE" (deactivated by owner)
+     * - PENDING_APPROVAL → "UNAVAILABLE" (pending admin review)
+     *
+     * This is one extra query per page — not N+1.
+     *
+     * All filters are optional — pass null to skip.
+     * sortBy controls ordering: price_asc, price_desc, newest (default).
      */
     @Transactional(readOnly = true)
     public PagedResponse<TruckListResponse> searchTrucks(
-            String city, String vehicleType, Pageable pageable) {
+            String city, String vehicleType,
+            BigDecimal minPrice, BigDecimal maxPrice,
+            Integer minCapacity, String sortBy,
+            Pageable pageable) {
 
-        Page<Truck> page;
+        Sort sort = resolveSort(sortBy);
+        Pageable sortedPageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
 
-        if (city != null && !city.isBlank()) {
-            page = truckRepository.findByStatusAndLocationCityIgnoreCaseAndDeletedAtIsNull(
-                    TruckStatus.APPROVED, city.trim(), pageable);
-        } else if (vehicleType != null && !vehicleType.isBlank()) {
-            page = truckRepository.findByStatusAndVehicleType_NameAndDeletedAtIsNull(
-                    TruckStatus.APPROVED, vehicleType.toUpperCase(), pageable);
-        } else {
-            page = truckRepository.findByStatusAndDeletedAtIsNull(
-                    TruckStatus.APPROVED, pageable);
-        }
+        Page<Truck> page = truckRepository.searchPublicTrucks(
+                city != null && !city.isBlank() ? city.trim() : null,
+                vehicleType != null && !vehicleType.isBlank() ? vehicleType.toUpperCase() : null,
+                minPrice,
+                maxPrice,
+                minCapacity,
+                sortedPageable);
 
-        return buildPagedResponse(page);
+        return buildPagedResponseWithAvailability(page);
+    }
+
+    /**
+     * Resolve sortBy string to a Spring Data Sort object.
+     * Defaults to newest (createdAt DESC) if sortBy is null or unrecognized.
+     */
+    private Sort resolveSort(String sortBy) {
+        if (sortBy == null) return Sort.by(Sort.Direction.DESC, "createdAt");
+        return switch (sortBy.toLowerCase()) {
+            case "price_asc"  -> Sort.by(Sort.Direction.ASC,  "pricePerDay");
+            case "price_desc" -> Sort.by(Sort.Direction.DESC, "pricePerDay");
+            default           -> Sort.by(Sort.Direction.DESC, "createdAt");
+        };
     }
 
     /**
@@ -476,5 +548,87 @@ public class TruckService {
                 .totalPages(page.getTotalPages())
                 .last(page.isLast())
                 .build();
+    }
+
+    /**
+     * Build paged response with availability enrichment for public search.
+     *
+     * After fetching the page, one batch query fetches all CONFIRMED/ACTIVE bookings
+     * for the truck IDs on this page. Then each truck is annotated:
+     * - APPROVED + no booking → AVAILABLE
+     * - APPROVED + booking → RENTED (rentedUntil = booking.endDate)
+     * - INACTIVE → UNAVAILABLE (deactivated)
+     * - PENDING_APPROVAL → UNAVAILABLE (pending review)
+     */
+    private PagedResponse<TruckListResponse> buildPagedResponseWithAvailability(Page<Truck> page) {
+        List<UUID> truckIds = page.getContent().stream()
+                .map(Truck::getId)
+                .collect(Collectors.toList());
+
+        // Cover photos — one query
+        Map<UUID, String> coverPhotos = new HashMap<>();
+        if (!truckIds.isEmpty()) {
+            List<Object[]> rows = truckDocumentRepository.findFirstPhotoPerTruck(truckIds);
+            for (Object[] row : rows) {
+                UUID truckId = (UUID) row[0];
+                coverPhotos.putIfAbsent(truckId, baseUrl + "/api/v1/files/" + row[1]);
+            }
+        }
+
+        // Availability — one extra query for CONFIRMED/ACTIVE bookings on this page
+        // truckId → booking (only one booking per truck can be ACTIVE at a time due to conflict check)
+        Map<UUID, Booking> activeBookingsByTruckId = new HashMap<>();
+        if (!truckIds.isEmpty()) {
+            List<Booking> bookings = bookingRepository.findCurrentOrUpcomingBookingsByTruckIds(truckIds);
+            for (Booking b : bookings) {
+                activeBookingsByTruckId.putIfAbsent(b.getTruck().getId(), b);
+            }
+        }
+
+        List<TruckListResponse> content = page.getContent().stream()
+                .map(truck -> {
+                    TruckListResponse response = mapToListResponse(truck, coverPhotos.get(truck.getId()));
+                    enrichAvailability(response, truck, activeBookingsByTruckId.get(truck.getId()));
+                    return response;
+                })
+                .collect(Collectors.toList());
+
+        return PagedResponse.<TruckListResponse>builder()
+                .content(content)
+                .pageNumber(page.getNumber())
+                .pageSize(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .last(page.isLast())
+                .build();
+    }
+
+    /**
+     * Annotate a TruckListResponse with availability status based on the truck's
+     * current status and whether it has an active/upcoming booking.
+     */
+    private void enrichAvailability(TruckListResponse response, Truck truck, Booking activeBooking) {
+        switch (truck.getStatus()) {
+            case APPROVED -> {
+                if (activeBooking == null) {
+                    response.setAvailabilityStatus("AVAILABLE");
+                } else {
+                    response.setAvailabilityStatus("RENTED");
+                    response.setRentedUntil(activeBooking.getEndDate().toString());
+                }
+            }
+            case INACTIVE -> {
+                response.setAvailabilityStatus("UNAVAILABLE");
+                response.setUnavailableReason("Deactivated by owner");
+            }
+            case PENDING_APPROVAL -> {
+                response.setAvailabilityStatus("UNAVAILABLE");
+                response.setUnavailableReason("Pending approval");
+            }
+            default -> {
+                // REJECTED trucks should not reach here (filtered in JPQL)
+                response.setAvailabilityStatus("UNAVAILABLE");
+            }
+        }
     }
 }
