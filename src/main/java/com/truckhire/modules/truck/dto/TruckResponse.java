@@ -47,4 +47,10 @@ public class TruckResponse {
 
     // ── Metadata ──
     private String createdAt;
+
+    // ── Availability (enriched at query time) ──
+    private String availabilityStatus;   // "AVAILABLE", "RENTED", "UNAVAILABLE"
+    private String rentedUntil;          // ISO date, only when RENTED
+    private String unavailableReason;    // only when UNAVAILABLE
+    private String coverPhotoUrl;
 }

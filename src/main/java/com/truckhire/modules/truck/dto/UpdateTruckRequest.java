@@ -28,6 +28,7 @@ public class UpdateTruckRequest {
     @DecimalMin(value = "0.01", message = "Price per day must be greater than 0")
     private BigDecimal pricePerDay;
 
+    @DecimalMin(value = "0.0", message = "Cost per mile cannot be negative")
     private BigDecimal costPerMile;
 
     @Size(max = 255, message = "Location city must not exceed 255 characters")

@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════
-# TruckHire - DEV Profile Configuration
+# TruckRental - DEV Profile Configuration
 # ═══════════════════════════════════════════════════
 # This file ONLY loads when spring.profiles.active=dev
 # It overrides values from application.yml
@@ -12,7 +12,7 @@
 # ═══════════════════════════════════════════════════
 
 spring:
-  # ── Disable Redis auto-config until Redis is installed ──
+  # ── Disable Redis auto-config in dev ──
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration

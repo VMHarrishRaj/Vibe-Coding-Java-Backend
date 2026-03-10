@@ -301,7 +301,7 @@ public class TruckService {
         Pageable sortedPageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
 
         Page<Truck> page = truckRepository.searchPublicTrucks(
-                city != null && !city.isBlank() ? city.trim() : null,
+                city != null && !city.isBlank() ? city.trim().toLowerCase() : null,
                 vehicleType != null && !vehicleType.isBlank() ? vehicleType.toUpperCase() : null,
                 minPrice,
                 maxPrice,
@@ -326,12 +326,99 @@ public class TruckService {
 
     /**
      * Get truck detail (any user).
+     * Enriches with cover photo URL and current availability status.
      */
     @Transactional(readOnly = true)
     public TruckResponse getTruckById(UUID truckId) {
         Truck truck = truckRepository.findByIdAndDeletedAtIsNull(truckId)
                 .orElseThrow(() -> new ResourceNotFoundException("Truck", "id", truckId));
-        return mapToResponse(truck);
+
+        // Cover photo — reuse the same batch query with a single-element list
+        String coverPhotoUrl = null;
+        List<Object[]> photos = truckDocumentRepository.findFirstPhotoPerTruck(List.of(truckId));
+        if (!photos.isEmpty()) {
+            coverPhotoUrl = baseUrl + "/api/v1/files/" + photos.get(0)[1];
+        }
+
+        // Availability — reuse the same CONFIRMED/ACTIVE batch query with a single-element list
+        List<Booking> bookings = bookingRepository.findCurrentOrUpcomingBookingsByTruckIds(List.of(truckId));
+        Booking activeBooking = bookings.isEmpty() ? null : bookings.get(0);
+
+        return mapToDetailResponse(truck, coverPhotoUrl, activeBooking);
+    }
+
+    /**
+     * Get all upcoming booked date ranges for a truck (public, for calendar date picker).
+     * Includes PENDING bookings so two renters cannot both select the same dates.
+     */
+    @Transactional(readOnly = true)
+    public BookedDatesResponse getBookedDates(UUID truckId) {
+        truckRepository.findByIdAndDeletedAtIsNull(truckId)
+                .orElseThrow(() -> new ResourceNotFoundException("Truck", "id", truckId));
+
+        List<Booking> bookings = bookingRepository.findUpcomingBookingsByTruckId(truckId);
+
+        List<BookedDatesResponse.BookedRange> ranges = bookings.stream()
+                .map(b -> BookedDatesResponse.BookedRange.builder()
+                        .startDate(b.getStartDate().toString())
+                        .endDate(b.getEndDate().toString())
+                        .status(b.getStatus().name())
+                        .build())
+                .toList();
+
+        return BookedDatesResponse.builder()
+                .truckId(truckId.toString())
+                .bookedRanges(ranges)
+                .build();
+    }
+
+    /**
+     * Check whether a truck is available for a specific date range (public, pre-booking validation).
+     * Validates that startDate < endDate and startDate >= today.
+     * Returns the conflicting booking's date range when unavailable.
+     */
+    @Transactional(readOnly = true)
+    public TruckAvailabilityResponse checkAvailability(UUID truckId, LocalDate startDate, LocalDate endDate) {
+        truckRepository.findByIdAndDeletedAtIsNull(truckId)
+                .orElseThrow(() -> new ResourceNotFoundException("Truck", "id", truckId));
+
+        if (!startDate.isBefore(endDate)) {
+            throw new BusinessException("INVALID_DATE_RANGE", "startDate must be before endDate");
+        }
+        if (startDate.isBefore(LocalDate.now())) {
+            throw new BusinessException("INVALID_DATE_RANGE", "startDate cannot be in the past");
+        }
+
+        boolean hasConflict = bookingRepository.existsConflictingBooking(truckId, startDate, endDate);
+
+        if (!hasConflict) {
+            return TruckAvailabilityResponse.builder()
+                    .truckId(truckId.toString())
+                    .available(true)
+                    .startDate(startDate.toString())
+                    .endDate(endDate.toString())
+                    .build();
+        }
+
+        // Find the first conflicting booking to return its range to the frontend
+        TruckAvailabilityResponse.ConflictingRange conflictRange = bookingRepository
+                .findUpcomingBookingsByTruckId(truckId)
+                .stream()
+                .filter(b -> !b.getStartDate().isAfter(endDate) && !b.getEndDate().isBefore(startDate))
+                .findFirst()
+                .map(b -> TruckAvailabilityResponse.ConflictingRange.builder()
+                        .startDate(b.getStartDate().toString())
+                        .endDate(b.getEndDate().toString())
+                        .build())
+                .orElse(null);
+
+        return TruckAvailabilityResponse.builder()
+                .truckId(truckId.toString())
+                .available(false)
+                .startDate(startDate.toString())
+                .endDate(endDate.toString())
+                .conflictingRange(conflictRange)
+                .build();
     }
 
     /**
@@ -472,7 +559,14 @@ public class TruckService {
     }
 
     private TruckResponse mapToResponse(Truck truck) {
-        return TruckResponse.builder()
+        return mapToDetailResponse(truck, null, null);
+    }
+
+    /**
+     * Build a TruckResponse with optional cover photo URL and availability enrichment.
+     */
+    private TruckResponse mapToDetailResponse(Truck truck, String coverPhotoUrl, Booking activeBooking) {
+        TruckResponse.TruckResponseBuilder builder = TruckResponse.builder()
                 .id(truck.getId().toString())
                 .ownerId(truck.getOwner().getId().toString())
                 .ownerName(truck.getOwner().getFullname())
@@ -492,7 +586,30 @@ public class TruckService {
                 .rejectionReason(truck.getRejectionReason())
                 .description(truck.getDescription())
                 .createdAt(truck.getCreatedAt() != null ? truck.getCreatedAt().toString() : null)
-                .build();
+                .coverPhotoUrl(coverPhotoUrl);
+
+        // Availability enrichment — same logic as enrichAvailability() for TruckListResponse
+        switch (truck.getStatus()) {
+            case APPROVED -> {
+                if (activeBooking == null) {
+                    builder.availabilityStatus("AVAILABLE");
+                } else {
+                    builder.availabilityStatus("RENTED");
+                    builder.rentedUntil(activeBooking.getEndDate().toString());
+                }
+            }
+            case INACTIVE -> {
+                builder.availabilityStatus("UNAVAILABLE");
+                builder.unavailableReason("Deactivated by owner");
+            }
+            case PENDING_APPROVAL -> {
+                builder.availabilityStatus("UNAVAILABLE");
+                builder.unavailableReason("Pending approval");
+            }
+            default -> builder.availabilityStatus("UNAVAILABLE");
+        }
+
+        return builder.build();
     }
 
     private TruckListResponse mapToListResponse(Truck truck, String coverPhotoUrl) {

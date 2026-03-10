@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
  * Expected response:
  * {
  * "success": true,
- * "message": "TruckHire API is running",
+ * "message": "TruckRental API is running",
  * "timestamp": "2026-03-03T..."
  * }
  */
@@ -23,6 +23,6 @@ public class HealthController {
 
     @GetMapping("/health")
     public ApiResponse<String> health() {
-        return ApiResponse.success("TruckHire API is running", "OK");
+        return ApiResponse.success("TruckRental API is running", "OK");
     }
 }

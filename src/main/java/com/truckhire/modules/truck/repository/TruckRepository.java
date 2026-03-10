@@ -56,20 +56,23 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
     // the service layer after this query runs — one extra query per page, not N+1.
     // All filter params are optional — passing null skips that condition.
     // Sorting is handled by the Pageable passed from the service layer.
+    // :cityLower must be pre-lowercased by the caller (or null to skip filter).
+    // Avoids LOWER(:city) on a nullable bind param — Hibernate 6 binds null as
+    // bytea on PostgreSQL, causing "function lower(bytea) does not exist".
     @Query("""
             SELECT t FROM Truck t
             JOIN FETCH t.owner
             JOIN FETCH t.vehicleType
             WHERE t.status IN ('APPROVED', 'INACTIVE', 'PENDING_APPROVAL')
               AND t.deletedAt IS NULL
-              AND (:city IS NULL OR LOWER(t.locationCity) = LOWER(:city))
+              AND (:cityLower IS NULL OR LOWER(t.locationCity) = :cityLower)
               AND (:vehicleType IS NULL OR t.vehicleType.name = :vehicleType)
               AND (:minPrice IS NULL OR t.pricePerDay >= :minPrice)
               AND (:maxPrice IS NULL OR t.pricePerDay <= :maxPrice)
               AND (:minCapacity IS NULL OR t.capacityTons >= :minCapacity)
             """)
     Page<Truck> searchPublicTrucks(
-            @Param("city") String city,
+            @Param("cityLower") String cityLower,
             @Param("vehicleType") String vehicleType,
             @Param("minPrice") BigDecimal minPrice,
             @Param("maxPrice") BigDecimal maxPrice,

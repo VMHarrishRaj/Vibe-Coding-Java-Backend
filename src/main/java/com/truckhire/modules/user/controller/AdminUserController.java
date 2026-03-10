@@ -94,9 +94,7 @@ public class AdminUserController {
      * POST /api/v1/admin/users
      *
      * Admin registers a new OWNER or RENTER. The user is created immediately as
-     * ACTIVE with a fixed temporary password returned in the response.
-     * NOTE (future): Send temporary password via email (SMTP) instead of returning
-     * it in the response body.
+     * ACTIVE. A welcome email with login credentials is sent to the user's inbox.
      */
     @PostMapping
     public ResponseEntity<ApiResponse<AdminCreateUserResponse>> createUser(
