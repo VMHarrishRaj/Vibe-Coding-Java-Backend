@@ -27,12 +27,12 @@ import java.util.stream.Collectors;
  * KYC Service — handles KYC document upload, retrieval, and verification.
  *
  * BUSINESS RULES:
- * 1. Only OWNERs can upload KYC documents
+ * 1. Both OWNERs and RENTERs can upload KYC documents
  * 2. Document types: AADHAAR, PAN, LICENSE (category = "KYC" in document_types)
  * 3. Files stored on disk via FileStorageService, path saved in DB
  * 4. Admin can verify KYC → sets user.kyc_verified = true
- * 5. KYC verification is a prerequisite for truck uploading (frontend enforces,
- * backend guards in TruckService)
+ * 5. For OWNERs: KYC verification required before adding trucks (guarded in TruckService)
+ * 6. For RENTERs: KYC verification required before making a booking (guarded in Phase 5 BookingService)
  */
 @Slf4j
 @Service
@@ -49,9 +49,13 @@ public class KycService {
     private final TruckRepository truckRepository;
 
     /**
-     * Upload a KYC document for the authenticated owner.
+     * Upload a KYC document for the authenticated user (OWNER or RENTER).
      *
-     * @param userId       Owner's user ID (from JWT context)
+     * Both owners and renters can upload KYC documents.
+     * - OWNER: KYC verification is required before adding trucks (checked in TruckService)
+     * - RENTER: KYC verification is required before making a booking (checked in Phase 5 BookingService)
+     *
+     * @param userId       User's ID (from JWT context)
      * @param documentType Document type name (AADHAAR, PAN, LICENSE)
      * @param file         The uploaded file
      * @return Document response with file path and status
@@ -59,12 +63,6 @@ public class KycService {
     @Transactional
     public KycDocumentResponse uploadKycDocument(UUID userId, String documentType, MultipartFile file) {
         User user = findUserById(userId);
-
-        // Only owners can upload KYC
-        if (!Role.OWNER.equals(user.getRole().getName())) {
-            throw new BusinessException("NOT_OWNER",
-                    "Only owners can upload KYC documents");
-        }
 
         // Validate document type exists and is KYC category
         DocumentType docType = documentTypeRepository

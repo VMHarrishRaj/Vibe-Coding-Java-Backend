@@ -16,6 +16,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -97,17 +98,29 @@ public class TruckController {
     }
 
     /**
-     * GET /api/v1/trucks?city=Delhi&vehicleType=HEAVY&page=0&size=20
+     * GET /api/v1/trucks
      * Search/browse trucks. Returns only APPROVED trucks.
+     *
+     * Query params (all optional):
+     *   city          — filter by city (case-insensitive)
+     *   vehicleType   — MINI / STANDARD / HEAVY
+     *   minPrice      — minimum price per day
+     *   maxPrice      — maximum price per day
+     *   minCapacity   — minimum capacity in tons
+     *   sortBy        — price_asc | price_desc | newest (default)
      */
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<TruckListResponse>>> searchTrucks(
             @RequestParam(required = false) String city,
             @RequestParam(required = false) String vehicleType,
+            @RequestParam(required = false) BigDecimal minPrice,
+            @RequestParam(required = false) BigDecimal maxPrice,
+            @RequestParam(required = false) Integer minCapacity,
+            @RequestParam(required = false) String sortBy,
             @PageableDefault(size = 20) Pageable pageable) {
 
         PagedResponse<TruckListResponse> trucks = truckService.searchTrucks(
-                city, vehicleType, pageable);
+                city, vehicleType, minPrice, maxPrice, minCapacity, sortBy, pageable);
 
         return ResponseEntity.ok(ApiResponse.success("Trucks retrieved", trucks));
     }

@@ -27,5 +27,10 @@ public class TruckListResponse {
     private String status;
     private String ownerName;
     private String createdAt;
-    private String coverPhotoUrl; // nullable — first PHOTO document URL, null if no photos uploaded
+    private String coverPhotoUrl;       // nullable — first PHOTO document URL, null if no photos uploaded
+
+    // Availability enrichment (Phase 5 — populated in public search)
+    private String availabilityStatus;  // "AVAILABLE", "RENTED", "UNAVAILABLE"
+    private String rentedUntil;         // ISO date, only when RENTED
+    private String unavailableReason;   // only when UNAVAILABLE
 }

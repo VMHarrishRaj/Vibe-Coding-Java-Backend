@@ -94,4 +94,17 @@ public class AuthController {
         return ResponseEntity
                 .ok(ApiResponse.success("Login successful", response));
     }
+
+    /**
+     * POST /api/v1/auth/logout
+     *
+     * Stub logout endpoint — client must discard the JWT token on their side.
+     * Server-side token invalidation (Redis blacklist) is planned for Phase 10.
+     *
+     * No request body required. No response data.
+     */
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<Void>> logout() {
+        return ResponseEntity.ok(ApiResponse.success("Logged out successfully", null));
+    }
 }
