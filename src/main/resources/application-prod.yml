@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════
-# TruckHire - PROD Profile Configuration
+# TruckRental - PROD Profile Configuration
 # ═══════════════════════════════════════════════════
 # This file ONLY loads when spring.profiles.active=prod
 #

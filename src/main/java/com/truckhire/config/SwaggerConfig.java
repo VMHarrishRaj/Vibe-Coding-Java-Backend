@@ -27,11 +27,11 @@ public class SwaggerConfig {
     public OpenAPI openAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("TruckHire API")
+                        .title("TruckRental API")
                         .description("Truck Rental Marketplace Platform API")
                         .version("v0.1.0")
                         .contact(new Contact()
-                                .name("TruckHire Team")))
+                                .name("TruckRental Team")))
                 // Add "Authorize" button in Swagger UI for JWT
                 .addSecurityItem(new SecurityRequirement().addList("Bearer Authentication"))
                 .components(new io.swagger.v3.oas.models.Components()

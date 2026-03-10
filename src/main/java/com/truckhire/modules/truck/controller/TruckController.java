@@ -16,7 +16,10 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.springframework.format.annotation.DateTimeFormat;
+
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -182,5 +185,31 @@ public class TruckController {
 
         List<TruckDocumentResponse> documents = truckService.getTruckDocuments(id);
         return ResponseEntity.ok(ApiResponse.success("Truck documents retrieved", documents));
+    }
+
+    /**
+     * GET /api/v1/trucks/{id}/booked-dates
+     * Returns all upcoming booked date ranges for the calendar date picker.
+     * Public — no auth required.
+     */
+    @GetMapping("/{id}/booked-dates")
+    public ResponseEntity<ApiResponse<BookedDatesResponse>> getBookedDates(@PathVariable UUID id) {
+        BookedDatesResponse response = truckService.getBookedDates(id);
+        return ResponseEntity.ok(ApiResponse.success("Booked dates retrieved", response));
+    }
+
+    /**
+     * GET /api/v1/trucks/{id}/availability?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+     * Pre-booking validation — check if a truck is available for specific dates.
+     * Public — no auth required.
+     */
+    @GetMapping("/{id}/availability")
+    public ResponseEntity<ApiResponse<TruckAvailabilityResponse>> checkAvailability(
+            @PathVariable UUID id,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+
+        TruckAvailabilityResponse response = truckService.checkAvailability(id, startDate, endDate);
+        return ResponseEntity.ok(ApiResponse.success("Availability checked", response));
     }
 }

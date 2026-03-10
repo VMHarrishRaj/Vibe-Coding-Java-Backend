@@ -7,11 +7,7 @@ import lombok.NoArgsConstructor;
 
 /**
  * Response DTO for POST /admin/users — admin registers a new OWNER or RENTER.
- *
- * temporaryPassword is shown once in the response for the admin to share with
- * the user out-of-band.
- * NOTE (future — email notification): Replace with SMTP delivery and remove
- * temporaryPassword from the response body once email is confirmed working.
+ * A welcome email with login credentials is sent directly to the user's inbox.
  */
 @Data
 @Builder
@@ -22,5 +18,4 @@ public class AdminCreateUserResponse {
     private String email;
     private String role;
     private String status;
-    private String temporaryPassword;
 }

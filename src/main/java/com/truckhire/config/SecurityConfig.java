@@ -60,6 +60,9 @@ public class SecurityConfig {
                         .requestMatchers("/health").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/files/trucks/**").permitAll()
+                        .requestMatchers("/trucks/*/booked-dates").permitAll()
+                        .requestMatchers("/trucks/*/availability").permitAll()
 
                         // Everything else requires authentication
                         .anyRequest().authenticated())

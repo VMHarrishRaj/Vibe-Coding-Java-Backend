@@ -27,8 +27,8 @@
     <groupId>com.truckhire</groupId>
     <artifactId>truckhire</artifactId>
     <version>0.1.0-SNAPSHOT</version>
-    <name>TruckHire</name>
-    <description>TruckHire - Truck Rental Marketplace Platform</description>
+    <name>TruckRental</name>
+    <description>TruckRental - Truck Rental Marketplace Platform</description>
 
     <!-- ═══════════════════════════════════════════════
          PROPERTIES
@@ -55,6 +55,13 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- ── EMAIL (Spring Mail / JavaMailSender) ── -->
+        <!-- Provides JavaMailSender for SMTP email delivery -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
 
         <!-- ── DATABASE (JPA + PostgreSQL) ── -->

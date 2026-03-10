@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════
-# TruckHire - Application Configuration
+# TruckRental - Application Configuration
 # ═══════════════════════════════════════════════════
 # This is the MAIN config file. It sets the active profile
 # and defines settings shared across ALL environments.
@@ -13,7 +13,7 @@
 
 spring:
   application:
-    name: truckhire
+    name: truckrental
 
   # Active profile: controls which application-{profile}.yml is loaded
   # Override with: SPRING_PROFILES_ACTIVE=prod (env variable)
@@ -42,6 +42,20 @@ spring:
     locations: classpath:db/migration
     # Naming: V1__description.sql, V2__description.sql
     baseline-on-migrate: true
+
+  # ── Email (Spring Mail) ──
+  # Credentials (SMTP_USER, SMTP_PASSWORD) must be set in .env for all profiles.
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${SMTP_USER}
+    password: ${SMTP_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
 
   # ── Multipart File Upload ──
   servlet:

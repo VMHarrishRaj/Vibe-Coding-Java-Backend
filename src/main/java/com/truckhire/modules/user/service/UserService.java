@@ -1,6 +1,7 @@
 package com.truckhire.modules.user.service;
 
 import com.truckhire.common.dto.PagedResponse;
+import com.truckhire.common.email.EmailSender;
 import com.truckhire.common.exception.BusinessException;
 import com.truckhire.common.exception.ResourceNotFoundException;
 import com.truckhire.modules.auth.dto.AuthResponse;
@@ -58,6 +59,7 @@ public class UserService {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final EmailSender emailSender;
 
     // ═══════════════════════════════════════
     // USER PROFILE OPERATIONS
@@ -278,10 +280,8 @@ public class UserService {
      *
      * POST /admin/users
      *
-     * A fixed temporary password is used for all admin-registered users.
-     * The password is returned in the response for the admin to share out-of-band.
-     * NOTE (future — email notification): Send via SMTP and remove temporaryPassword
-     * from the response body once email delivery is confirmed working.
+     * A fixed temporary password is used. Credentials are sent to the user's
+     * inbox via welcome email — not returned in the response body.
      */
     @Transactional
     public AdminCreateUserResponse createUser(AdminCreateUserRequest request) {
@@ -325,15 +325,20 @@ public class UserService {
         log.info("User created by admin: id={}, email={}, role={}",
                 savedUser.getId(), savedUser.getEmail(), roleName);
 
+        // ── Send welcome email with login credentials ──
+        // Non-blocking: email failure must not roll back user creation.
+        // The user is saved; a failed email is logged for manual follow-up.
+        try {
+            emailSender.sendWelcomeEmail(savedUser.getEmail(), savedUser.getFullname(), temporaryPassword);
+        } catch (Exception e) {
+            log.error("Welcome email failed for user {}: {}", savedUser.getId(), e.getMessage());
+        }
+
         return AdminCreateUserResponse.builder()
                 .userId(savedUser.getId().toString())
                 .email(savedUser.getEmail())
                 .role(roleName)
                 .status(initialStatus.name())
-                .temporaryPassword(temporaryPassword)
-                // NOTE (future — email notification): Replace temporaryPassword in response
-                // with an email sent via SMTP (JavaMailSender). Remove from response once
-                // email delivery is confirmed working.
                 .build();
     }
 
@@ -345,12 +350,12 @@ public class UserService {
      */
     @Transactional
     public AuthResponse createAdmin(CreateAdminRequest request) {
-        // ── Duplicate checks (same as registration) ──
-        if (userRepository.existsByEmail(request.getEmail().toLowerCase().trim())) {
+        // ── Duplicate checks (soft-delete-aware, same as createUser) ──
+        if (userRepository.existsByEmailAndDeletedAtIsNull(request.getEmail().toLowerCase().trim())) {
             throw new BusinessException("EMAIL_TAKEN",
                     "An account with this email already exists");
         }
-        if (userRepository.existsByPhone(request.getPhone().trim())) {
+        if (userRepository.existsByPhoneAndDeletedAtIsNull(request.getPhone().trim())) {
             throw new BusinessException("PHONE_TAKEN",
                     "An account with this phone number already exists");
         }

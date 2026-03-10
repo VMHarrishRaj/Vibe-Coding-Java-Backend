@@ -4,7 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * TruckHire Application Entry Point.
+ * TruckRental Application Entry Point.
  *
  * @SpringBootApplication is a convenience annotation that combines:
  *   - @Configuration:       This class can define beans

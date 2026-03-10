@@ -67,6 +67,20 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             """)
     List<Booking> findCurrentOrUpcomingBookingsByTruckIds(@Param("truckIds") List<UUID> truckIds);
 
+    /**
+     * Find upcoming/active bookings for a single truck (for booked-dates + availability endpoints).
+     * Includes PENDING so calendar blocks all reserved ranges, not just confirmed ones —
+     * prevents two renters selecting the same dates simultaneously.
+     */
+    @Query("""
+            SELECT b FROM Booking b
+            WHERE b.truck.id = :truckId
+              AND b.status IN ('PENDING', 'CONFIRMED', 'ACTIVE')
+              AND b.endDate >= CURRENT_DATE
+            ORDER BY b.startDate ASC
+            """)
+    List<Booking> findUpcomingBookingsByTruckId(@Param("truckId") UUID truckId);
+
     // Renter's bookings (paginated, newest first)
     Page<Booking> findByRenterIdOrderByCreatedAtDesc(UUID renterId, Pageable pageable);
 
