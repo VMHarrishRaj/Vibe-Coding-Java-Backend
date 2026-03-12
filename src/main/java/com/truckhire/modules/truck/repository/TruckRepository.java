@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -59,6 +60,10 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
     // :cityLower must be pre-lowercased by the caller (or null to skip filter).
     // Avoids LOWER(:city) on a nullable bind param — Hibernate 6 binds null as
     // bytea on PostgreSQL, causing "function lower(bytea) does not exist".
+    // Date availability filter uses a NOT IN subquery on bookings.
+    // Guard is :availableFrom IS NULL only — the service guarantees both are
+    // null or both present. When both are null, the subquery is skipped entirely.
+    // Booking is resolved via JPA persistence context — no Java import needed here.
     @Query("""
             SELECT t FROM Truck t
             JOIN FETCH t.owner
@@ -70,6 +75,12 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
               AND (:minPrice IS NULL OR t.pricePerDay >= :minPrice)
               AND (:maxPrice IS NULL OR t.pricePerDay <= :maxPrice)
               AND (:minCapacity IS NULL OR t.capacityTons >= :minCapacity)
+              AND (:availableFrom IS NULL OR t.id NOT IN (
+                  SELECT b.truck.id FROM Booking b
+                  WHERE b.status IN ('PENDING', 'CONFIRMED', 'ACTIVE')
+                    AND b.startDate <= :availableTo
+                    AND b.endDate >= :availableFrom
+              ))
             """)
     Page<Truck> searchPublicTrucks(
             @Param("cityLower") String cityLower,
@@ -77,6 +88,8 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
             @Param("minPrice") BigDecimal minPrice,
             @Param("maxPrice") BigDecimal maxPrice,
             @Param("minCapacity") Integer minCapacity,
+            @Param("availableFrom") LocalDate availableFrom,
+            @Param("availableTo") LocalDate availableTo,
             Pageable pageable);
 
     // ── Owner dashboard counts (M7) ──
@@ -94,4 +107,7 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
 
     @Query("SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType WHERE t.status = :status AND t.deletedAt IS NULL ORDER BY t.createdAt DESC")
     Page<Truck> findByStatusActiveWithOwner(@Param("status") TruckStatus status, Pageable pageable);
+
+    // Admin dashboard: total non-deleted trucks (all statuses)
+    long countByDeletedAtIsNull();
 }

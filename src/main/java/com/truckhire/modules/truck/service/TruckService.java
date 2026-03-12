@@ -295,7 +295,25 @@ public class TruckService {
             String city, String vehicleType,
             BigDecimal minPrice, BigDecimal maxPrice,
             Integer minCapacity, String sortBy,
+            LocalDate availableFrom, LocalDate availableTo,
             Pageable pageable) {
+
+        // ── Date range validation ──
+        // Both must be provided together or both omitted.
+        if ((availableFrom == null) != (availableTo == null)) {
+            throw new BusinessException("INVALID_DATE_RANGE",
+                    "Both availableFrom and availableTo must be provided together");
+        }
+        if (availableFrom != null) {
+            if (availableFrom.isBefore(LocalDate.now())) {
+                throw new BusinessException("INVALID_DATE_RANGE",
+                        "availableFrom cannot be in the past");
+            }
+            if (!availableTo.isAfter(availableFrom)) {
+                throw new BusinessException("INVALID_DATE_RANGE",
+                        "availableTo must be after availableFrom");
+            }
+        }
 
         Sort sort = resolveSort(sortBy);
         Pageable sortedPageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
@@ -306,6 +324,8 @@ public class TruckService {
                 minPrice,
                 maxPrice,
                 minCapacity,
+                availableFrom,
+                availableTo,
                 sortedPageable);
 
         return buildPagedResponseWithAvailability(page);

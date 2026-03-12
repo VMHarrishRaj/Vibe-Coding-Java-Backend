@@ -17,4 +17,10 @@ public interface EmailSender {
      * Contains their login email and temporary password.
      */
     void sendWelcomeEmail(String toEmail, String fullname, String tempPassword);
+
+    /**
+     * Send a password reset OTP to the given email address.
+     * Used during the forgot-password flow.
+     */
+    void sendPasswordResetOtp(String toEmail, String otp);
 }

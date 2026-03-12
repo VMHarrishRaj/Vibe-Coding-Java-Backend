@@ -104,6 +104,44 @@ public class AuthController {
     }
 
     /**
+     * POST /api/v1/auth/forgot-password
+     *
+     * Step 1 of the forgot-password flow.
+     * Sends a 6-digit OTP to the email address if a registered account exists.
+     * Always returns 200 with a generic message — does NOT reveal whether the
+     * email is registered (prevents user enumeration).
+     *
+     * Rate-limited: 1 request per minute per email (OTP_COOLDOWN on repeat).
+     */
+    @PostMapping("/forgot-password")
+    public ResponseEntity<ApiResponse<Void>> forgotPassword(
+            @Valid @RequestBody ForgotPasswordRequest request) {
+
+        authService.forgotPassword(request);
+        return ResponseEntity.ok(ApiResponse.success(
+                "If this email is registered, you will receive a password reset code shortly.", null));
+    }
+
+    /**
+     * POST /api/v1/auth/reset-password
+     *
+     * Step 2 of the forgot-password flow.
+     * Validates the OTP and updates the user's password.
+     *
+     * Error codes:
+     *   OTP_NOT_FOUND — no pending reset for this email (or OTP already used)
+     *   OTP_EXPIRED   — OTP past 10-minute window
+     *   OTP_INVALID   — wrong OTP code
+     */
+    @PostMapping("/reset-password")
+    public ResponseEntity<ApiResponse<Void>> resetPassword(
+            @Valid @RequestBody ResetPasswordRequest request) {
+
+        authService.resetPassword(request);
+        return ResponseEntity.ok(ApiResponse.success("Password reset successful.", null));
+    }
+
+    /**
      * POST /api/v1/auth/logout
      *
      * Client-side logout stub — client must discard the JWT token.
