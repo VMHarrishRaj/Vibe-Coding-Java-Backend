@@ -7,6 +7,7 @@ import com.truckhire.modules.admin.dto.AdminRevenueChartResponse;
 import com.truckhire.modules.admin.dto.AdminRevenueChartResponse.MonthlyRevenue;
 import com.truckhire.modules.booking.entity.BookingStatus;
 import com.truckhire.modules.booking.repository.BookingRepository;
+import com.truckhire.modules.truck.entity.TruckStatus;
 import com.truckhire.modules.truck.repository.TruckRepository;
 import com.truckhire.modules.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,16 +27,41 @@ public class AdminDashboardService {
 
     @Transactional(readOnly = true)
     public AdminDashboardStatsResponse getStats() {
+        // ── KPI cards ──
         BigDecimal totalRevenue = bookingRepository.sumTotalRevenueCompleted();
         long activeBookings = bookingRepository.countByStatusAndDeletedAtIsNull(BookingStatus.ACTIVE);
         long totalVehicles = truckRepository.countByDeletedAtIsNull();
         long totalClients = userRepository.countByRole_NameAndDeletedAtIsNull("RENTER");
+
+        // ── Booking Status widget ──
+        long ongoingBookings = bookingRepository.countByStatusAndDeletedAtIsNull(BookingStatus.ACTIVE);
+        long completedBookings = bookingRepository.countByStatusAndDeletedAtIsNull(BookingStatus.COMPLETED);
+        // Upcoming = PENDING (awaiting owner) + CONFIRMED (accepted, not yet started)
+        long upcomingBookings = bookingRepository.countByStatusAndDeletedAtIsNull(BookingStatus.PENDING)
+                + bookingRepository.countByStatusAndDeletedAtIsNull(BookingStatus.CONFIRMED);
+        long rejectedBookings = bookingRepository.countByStatusAndDeletedAtIsNull(BookingStatus.REJECTED);
+
+        // ── Vehicle Availability widget ──
+        long rentedVehicles = truckRepository.countRentedTrucks();
+        // Available = APPROVED trucks minus those currently rented out
+        long approvedVehicles = truckRepository.countByStatusAndDeletedAtIsNull(TruckStatus.APPROVED);
+        long availableVehicles = approvedVehicles - rentedVehicles;
+        // Not Available = temporarily out of service (can recover), REJECTED excluded
+        long notAvailableVehicles = truckRepository.countByStatusAndDeletedAtIsNull(TruckStatus.INACTIVE)
+                + truckRepository.countByStatusAndDeletedAtIsNull(TruckStatus.PENDING_APPROVAL);
 
         return AdminDashboardStatsResponse.builder()
                 .totalRevenue(totalRevenue)
                 .activeBookings(activeBookings)
                 .totalVehicles(totalVehicles)
                 .totalClients(totalClients)
+                .ongoingBookings(ongoingBookings)
+                .completedBookings(completedBookings)
+                .upcomingBookings(upcomingBookings)
+                .rejectedBookings(rejectedBookings)
+                .availableVehicles(availableVehicles)
+                .rentedVehicles(rentedVehicles)
+                .notAvailableVehicles(notAvailableVehicles)
                 .build();
     }
 
