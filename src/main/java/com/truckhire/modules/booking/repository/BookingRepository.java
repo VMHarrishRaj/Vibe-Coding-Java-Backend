@@ -128,4 +128,36 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     // Get next value from the booking_seq PostgreSQL sequence
     @Query(value = "SELECT nextval('booking_seq')", nativeQuery = true)
     long nextBookingSequence();
+
+    // Admin dashboard: total revenue from all COMPLETED bookings
+    @Query("SELECT COALESCE(SUM(b.totalAmount), 0) FROM Booking b WHERE b.status = 'COMPLETED' AND b.deletedAt IS NULL")
+    BigDecimal sumTotalRevenueCompleted();
+
+    // Admin dashboard: count by status (use with BookingStatus.ACTIVE for active bookings KPI)
+    long countByStatusAndDeletedAtIsNull(BookingStatus status);
+
+    // Admin dashboard: monthly revenue for last 12 months (COMPLETED bookings only)
+    @Query(value = """
+            SELECT TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM') AS month,
+                   COALESCE(SUM(total_amount), 0) AS revenue
+            FROM bookings
+            WHERE deleted_at IS NULL
+              AND status = 'COMPLETED'
+              AND created_at >= NOW() - INTERVAL '12 months'
+            GROUP BY TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM')
+            ORDER BY month ASC
+            """, nativeQuery = true)
+    List<Object[]> sumRevenueGroupedByMonth();
+
+    // Admin dashboard: monthly booking counts for last 12 months (all statuses)
+    @Query(value = """
+            SELECT TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM') AS month,
+                   COUNT(*) AS booking_count
+            FROM bookings
+            WHERE deleted_at IS NULL
+              AND created_at >= NOW() - INTERVAL '12 months'
+            GROUP BY TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM')
+            ORDER BY month ASC
+            """, nativeQuery = true)
+    List<Object[]> countBookingsGroupedByMonth();
 }

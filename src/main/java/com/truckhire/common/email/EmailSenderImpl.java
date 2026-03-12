@@ -73,6 +73,28 @@ public class EmailSenderImpl implements EmailSender {
         log.info("Welcome email sent to {}", toEmail);
     }
 
+    @Override
+    public void sendPasswordResetOtp(String toEmail, String otp) {
+        String subject = "TruckRental — Password Reset Code";
+        String html = """
+                <html>
+                    <body style="font-family: Arial, sans-serif; line-height: 1.6;">
+                        <h2>Hello,</h2>
+                        <p>We received a request to reset your <b>TruckRental</b> account password.</p>
+                        <p>Your Password Reset Code is:</p>
+                        <h2 style="color: #2E86C1;">%s</h2>
+                        <p>This code is valid for the next <b>10 minutes</b>. Please do not share it with anyone.</p>
+                        <p>If you did not request this, you can safely ignore this email. Your account is safe.</p>
+                        <hr>
+                        <p style="font-size: 12px; color: gray;">This is an automated email from <b>TruckRental</b>. Do not reply to this message.</p>
+                    </body>
+                </html>
+                """.formatted(otp);
+
+        sendHtml(toEmail, subject, html);
+        log.info("Password reset OTP email sent to {}", toEmail);
+    }
+
     private void sendHtml(String toEmail, String subject, String htmlBody) {
         try {
             MimeMessage message = mailSender.createMimeMessage();

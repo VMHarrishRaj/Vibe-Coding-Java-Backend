@@ -52,17 +52,40 @@ public class AuthService {
     private final JwtService jwtService;
     private final OtpService otpService;
     private final EmailSender emailSender;
+    private final PasswordResetService passwordResetService;
 
     /**
      * Step 1 of registration: validate uniqueness, generate + send OTP.
      *
      * No user row is created here. The RegisterRequest is stored as JSON
      * in pending_registrations and retrieved on verify.
+     *
+     * RESEND PATH (OTP re-entry fix):
+     *   If a pending registration already exists for this email, the user
+     *   likely closed the OTP screen and came back. Instead of throwing
+     *   EMAIL_TAKEN (which would deadlock them), we resend the OTP.
+     *   Phone uniqueness is skipped on the resend path — it was already
+     *   validated on the original request and is stored in payload_json.
      */
     @Transactional
     public OtpSentResponse initiateRegistration(RegisterRequest request) {
         String email = request.getEmail().toLowerCase().trim();
         String phone = request.getPhone().trim();
+
+        // ── Check if a pending registration already exists for this email ──
+        // This happens when the user closes the OTP screen and retries register.
+        // Resend the OTP instead of throwing EMAIL_TAKEN.
+        if (otpService.hasPendingRegistration(email)) {
+            otpService.checkResendCooldown(email);
+            String newOtp = otpService.generateOtp();
+            otpService.updatePendingForResend(email, newOtp);
+            emailSender.sendOtp(email, newOtp);
+            log.info("OTP resent (re-register path): email={}", email);
+            return OtpSentResponse.builder()
+                    .email(email)
+                    .message("A code was already sent. We've resent it to your email.")
+                    .build();
+        }
 
         // ── Check for duplicate email/phone in live users ──
         if (userRepository.existsByEmailAndDeletedAtIsNull(email)) {
@@ -207,6 +230,60 @@ public class AuthService {
         log.info("User logged in: id={}, email={}", user.getId(), user.getEmail());
 
         return buildAuthResponse(user, token);
+    }
+
+    /**
+     * Forgot password — step 1: generate and send a password reset OTP.
+     *
+     * Rate-limited by a 1-minute cooldown (same as registration OTP).
+     * Silently succeeds even when the email is not registered — this prevents
+     * user enumeration (attackers cannot tell which emails are registered).
+     *
+     * Note: existing JWT sessions for the user remain valid after reset.
+     * Server-side token invalidation (Redis blacklist) is planned for Phase 10.
+     */
+    @Transactional
+    public void forgotPassword(ForgotPasswordRequest request) {
+        String email = request.getEmail().toLowerCase().trim();
+
+        // ── Rate-limit all callers — apply cooldown before checking if user exists ──
+        passwordResetService.checkResendCooldown(email);
+
+        // ── Silent check: only send OTP if the user actually exists ──
+        // We do NOT throw if the user is not found — that would reveal whether
+        // the email is registered (user enumeration vulnerability).
+        userRepository.findByEmail(email)
+                .filter(u -> u.getDeletedAt() == null)
+                .ifPresent(user -> {
+                    String otp = otpService.generateOtp();
+                    passwordResetService.storePendingReset(email, otp);
+                    emailSender.sendPasswordResetOtp(email, otp);
+                    log.info("Password reset OTP sent: email={}", email);
+                });
+    }
+
+    /**
+     * Forgot password — step 2: verify OTP and set new password.
+     *
+     * On success, the user's password is updated and the OTP token is consumed.
+     * Note: existing JWT sessions remain valid (no blacklist — Phase 10 gap).
+     */
+    @Transactional
+    public void resetPassword(ResetPasswordRequest request) {
+        String email = request.getEmail().toLowerCase().trim();
+
+        // ── Validate and consume OTP — throws on bad/expired OTP ──
+        passwordResetService.validateAndConsume(email, request.getOtp());
+
+        // ── Find user (must exist and not be soft-deleted) ──
+        User user = userRepository.findByEmail(email)
+                .filter(u -> u.getDeletedAt() == null)
+                .orElseThrow(() -> new BusinessException("OTP_NOT_FOUND",
+                        "No account found for this email."));
+
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+        log.info("Password reset successful: email={}", email);
     }
 
     // ── Private helpers ──

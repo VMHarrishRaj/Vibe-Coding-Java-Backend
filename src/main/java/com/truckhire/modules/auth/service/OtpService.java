@@ -127,6 +127,15 @@ public class OtpService {
     }
 
     /**
+     * Check whether a pending registration exists for the given email.
+     * Used by initiateRegistration to detect the re-register (OTP re-entry) path.
+     */
+    @Transactional(readOnly = true)
+    public boolean hasPendingRegistration(String email) {
+        return pendingRepo.findByEmail(email.toLowerCase().trim()).isPresent();
+    }
+
+    /**
      * Enforce a 1-minute cooldown between OTP resend requests.
      *
      * Reads created_at from the pending row (not updated on resend — tracks

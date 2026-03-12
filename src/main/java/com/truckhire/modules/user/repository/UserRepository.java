@@ -57,4 +57,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("SELECT COUNT(u) FROM User u WHERE u.role.name = 'ADMIN' " +
             "AND u.status = 'ACTIVE' AND u.deletedAt IS NULL")
     long countActiveAdmins();
+
+    // Admin dashboard: count non-deleted users by role name
+    long countByRole_NameAndDeletedAtIsNull(String roleName);
 }
