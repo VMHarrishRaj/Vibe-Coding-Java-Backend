@@ -10,6 +10,7 @@ import com.truckhire.modules.user.dto.*;
 import com.truckhire.modules.user.entity.Role;
 import com.truckhire.modules.user.entity.User;
 import com.truckhire.modules.user.entity.UserStatus;
+import com.truckhire.modules.truck.repository.TruckRepository;
 import com.truckhire.modules.user.repository.RoleRepository;
 import com.truckhire.modules.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -60,6 +61,7 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final EmailSender emailSender;
+    private final TruckRepository truckRepository;
 
     // ═══════════════════════════════════════
     // USER PROFILE OPERATIONS
@@ -451,6 +453,10 @@ public class UserService {
      * Map User entity to condensed admin list response.
      */
     private AdminUserListResponse mapToAdminListResponse(User user) {
+        long vehicleCount = "OWNER".equals(user.getRole().getName())
+                ? truckRepository.countByOwnerIdAndDeletedAtIsNull(user.getId())
+                : 0L;
+
         return AdminUserListResponse.builder()
                 .id(user.getId().toString())
                 .fullname(user.getFullname())
@@ -460,6 +466,7 @@ public class UserService {
                 .status(user.getStatus().name())
                 .kycVerified(user.isKycVerified())
                 .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null)
+                .vehicleCount(vehicleCount)
                 .build();
     }
 }

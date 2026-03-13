@@ -30,4 +30,5 @@ public class AdminUserListResponse {
     private String status;
     private boolean kycVerified;
     private String createdAt;
+    private long vehicleCount;
 }

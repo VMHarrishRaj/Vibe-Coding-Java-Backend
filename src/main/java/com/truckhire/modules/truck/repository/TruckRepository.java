@@ -110,4 +110,24 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
 
     // Admin dashboard: total non-deleted trucks (all statuses)
     long countByDeletedAtIsNull();
+
+    // Admin user list: vehicle count per owner
+    long countByOwnerIdAndDeletedAtIsNull(UUID ownerId);
+
+    // Admin dashboard: count non-deleted trucks by a specific status
+    long countByStatusAndDeletedAtIsNull(TruckStatus status);
+
+    // Admin dashboard: count APPROVED trucks that have an ACTIVE booking today (rented right now)
+    @Query("""
+            SELECT COUNT(DISTINCT t) FROM Truck t
+            WHERE t.status = 'APPROVED'
+              AND t.deletedAt IS NULL
+              AND EXISTS (
+                  SELECT 1 FROM Booking b
+                  WHERE b.truck.id = t.id
+                    AND b.status = 'ACTIVE'
+                    AND b.deletedAt IS NULL
+              )
+            """)
+    long countRentedTrucks();
 }

@@ -12,8 +12,20 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AdminDashboardStatsResponse {
+    // KPI cards
     private BigDecimal totalRevenue;
     private long activeBookings;
     private long totalVehicles;
     private long totalClients;
+
+    // Booking Status widget
+    private long ongoingBookings;
+    private long completedBookings;
+    private long upcomingBookings;
+    private long rejectedBookings;
+
+    // Vehicle Availability widget
+    private long availableVehicles;
+    private long rentedVehicles;
+    private long notAvailableVehicles;
 }
