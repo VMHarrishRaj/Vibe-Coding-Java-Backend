@@ -19,11 +19,10 @@ spring:
       - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
 
   # ── PostgreSQL Connection ──
-  # Company PostgreSQL server
-  # Set DB_USERNAME and DB_PASSWORD as environment variables before running.
+  # Set DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD in .env before running.
   datasource:
-    url: jdbc:postgresql://35.225.235.66:5432/db_truck_rental
-    username: ${DB_USERNAME:usr_truck}
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}
+    username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     # HikariCP connection pool (Spring Boot default)
     hikari:
