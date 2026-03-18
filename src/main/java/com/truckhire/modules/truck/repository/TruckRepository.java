@@ -60,9 +60,32 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
     // :cityLower must be pre-lowercased by the caller (or null to skip filter).
     // Avoids LOWER(:city) on a nullable bind param — Hibernate 6 binds null as
     // bytea on PostgreSQL, causing "function lower(bytea) does not exist".
-    // Date availability filter uses a NOT IN subquery on bookings.
-    // Guard is :availableFrom IS NULL only — the service guarantees both are
-    // null or both present. When both are null, the subquery is skipped entirely.
+    //
+    // Two variants: without date filter (when no dates provided) and with date filter.
+    // This avoids PostgreSQL's inability to infer the type of a nullable LocalDate
+    // bind parameter used in a ":param IS NULL OR ..." guard ("could not determine
+    // data type of parameter $N"). Splitting into two methods eliminates the guard.
+    @Query("""
+            SELECT t FROM Truck t
+            JOIN FETCH t.owner
+            JOIN FETCH t.vehicleType
+            WHERE t.status IN ('APPROVED', 'INACTIVE', 'PENDING_APPROVAL')
+              AND t.deletedAt IS NULL
+              AND (:cityLower IS NULL OR LOWER(t.locationCity) = :cityLower)
+              AND (:vehicleType IS NULL OR t.vehicleType.name = :vehicleType)
+              AND (:minPrice IS NULL OR t.pricePerDay >= :minPrice)
+              AND (:maxPrice IS NULL OR t.pricePerDay <= :maxPrice)
+              AND (:minCapacity IS NULL OR t.capacityTons >= :minCapacity)
+            """)
+    Page<Truck> searchPublicTrucks(
+            @Param("cityLower") String cityLower,
+            @Param("vehicleType") String vehicleType,
+            @Param("minPrice") BigDecimal minPrice,
+            @Param("maxPrice") BigDecimal maxPrice,
+            @Param("minCapacity") Integer minCapacity,
+            Pageable pageable);
+
+    // Date-filtered variant — only called when both availableFrom and availableTo are non-null.
     // Booking is resolved via JPA persistence context — no Java import needed here.
     @Query("""
             SELECT t FROM Truck t
@@ -75,14 +98,14 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
               AND (:minPrice IS NULL OR t.pricePerDay >= :minPrice)
               AND (:maxPrice IS NULL OR t.pricePerDay <= :maxPrice)
               AND (:minCapacity IS NULL OR t.capacityTons >= :minCapacity)
-              AND (:availableFrom IS NULL OR t.id NOT IN (
+              AND t.id NOT IN (
                   SELECT b.truck.id FROM Booking b
                   WHERE b.status IN ('PENDING', 'CONFIRMED', 'ACTIVE')
                     AND b.startDate <= :availableTo
                     AND b.endDate >= :availableFrom
-              ))
+              )
             """)
-    Page<Truck> searchPublicTrucks(
+    Page<Truck> searchPublicTrucksWithDates(
             @Param("cityLower") String cityLower,
             @Param("vehicleType") String vehicleType,
             @Param("minPrice") BigDecimal minPrice,

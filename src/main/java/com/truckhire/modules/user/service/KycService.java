@@ -49,29 +49,27 @@ public class KycService {
     private final TruckRepository truckRepository;
 
     /**
-     * Upload a KYC document for the authenticated user (OWNER or RENTER).
+     * Upload a KYC document for the authenticated user.
      *
-     * Both owners and renters can upload KYC documents.
-     * - OWNER: KYC verification is required before adding trucks (checked in TruckService)
-     * - RENTER: KYC verification is required before making a booking (checked in Phase 5 BookingService)
+     * Accepts documentTypeId (1=DRIVER_LICENSE, 2=PASSPORT, 3=STATE_ID).
+     * After upload, advances user status: PENDING/REJECTED → PENDING_VERIFICATION.
+     * Never downgrades from ACTIVE.
      *
-     * @param userId       User's ID (from JWT context)
-     * @param documentType Document type name (AADHAAR, PAN, LICENSE)
-     * @param file         The uploaded file
-     * @return Document response with file path and status
+     * @param userId         User's ID (from JWT context)
+     * @param documentTypeId Numeric document type ID (1, 2, or 3)
+     * @param file           The uploaded file
      */
     @Transactional
-    public KycDocumentResponse uploadKycDocument(UUID userId, String documentType, MultipartFile file) {
+    public KycDocumentResponse uploadKycDocument(UUID userId, Integer documentTypeId, MultipartFile file) {
         User user = findUserById(userId);
 
-        // Validate document type exists and is KYC category
-        DocumentType docType = documentTypeRepository
-                .findByNameAndCategory(documentType.toUpperCase(), "KYC")
+        // Validate document type exists, is KYC category, and ID is one of the known US types (1/2/3)
+        DocumentType docType = documentTypeRepository.findById(documentTypeId)
+                .filter(dt -> "KYC".equals(dt.getCategory()) && dt.isActive())
                 .orElseThrow(() -> new BusinessException("INVALID_DOCUMENT_TYPE",
-                        "Invalid KYC document type: " + documentType +
-                                ". Must be one of: AADHAAR, PAN, LICENSE"));
+                        "Invalid documentTypeId: " + documentTypeId + ". Must be 1 (Driver's License), 2 (Passport), or 3 (State ID)"));
 
-        // Store file on disk: uploads/kyc/{userId}/{uuid}_filename.jpg
+        // Store file: uploads/kyc/{userId}/{uuid}_originalname.ext
         String subDirectory = "kyc/" + userId;
         String filePath = fileStorageService.storeFile(file, subDirectory);
 
@@ -84,8 +82,16 @@ public class KycService {
                 .build();
 
         UserDocument saved = userDocumentRepository.save(document);
-        log.info("KYC document uploaded: userId={}, type={}, path={}",
-                userId, documentType, filePath);
+        log.info("KYC document uploaded: userId={}, typeId={}, type={}, path={}",
+                userId, documentTypeId, docType.getName(), filePath);
+
+        // Advance user status: PENDING or REJECTED → PENDING_VERIFICATION
+        // Never downgrade from ACTIVE
+        if (user.getStatus() == UserStatus.PENDING || user.getStatus() == UserStatus.REJECTED) {
+            user.setStatus(UserStatus.PENDING_VERIFICATION);
+            userRepository.save(user);
+            log.info("User status advanced to PENDING_VERIFICATION after KYC upload: userId={}", userId);
+        }
 
         return mapToResponse(saved);
     }
@@ -219,15 +225,23 @@ public class KycService {
     }
 
     private KycDocumentResponse mapToResponse(UserDocument doc) {
+        // Extract original filename from stored path (format: uuid_originalname.ext)
+        String storedPath = doc.getFilePath();
+        String fileName = storedPath.contains("/")
+                ? storedPath.substring(storedPath.lastIndexOf('/') + 1)
+                : storedPath;
+
         return KycDocumentResponse.builder()
                 .id(doc.getId().toString())
+                .documentTypeId(doc.getDocumentType().getId())
                 .documentType(doc.getDocumentType().getName())
-                .filePath(doc.getFilePath())
-                .fileUrl(baseUrl + "/api/v1/files/" + doc.getFilePath())
-                .verificationStatus(doc.getVerificationStatus().name())
+                .fileName(fileName)
+                .filePath(storedPath)
+                .fileUrl(baseUrl + "/api/v1/files/" + storedPath)
+                .status(doc.getVerificationStatus().name())
                 .rejectionReason(doc.getRejectionReason())
-                .uploadedAt(doc.getUploadedAt() != null ? doc.getUploadedAt().toString() : null)
-                .verifiedAt(doc.getVerifiedAt() != null ? doc.getVerifiedAt().toString() : null)
+                .createdAt(doc.getUploadedAt() != null ? doc.getUploadedAt().toString() : null)
+                .reviewedAt(doc.getVerifiedAt() != null ? doc.getVerifiedAt().toString() : null)
                 .build();
     }
 }

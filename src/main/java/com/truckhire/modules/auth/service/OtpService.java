@@ -164,14 +164,44 @@ public class OtpService {
     }
 
     /**
-     * Update the pending row for a resend — resets created_at to now
-     * so the cooldown window tracks from this resend, not the original request.
+     * Update just the OTP on a pending row — used by the explicit /auth/resend-otp endpoint
+     * where the user is already on the OTP screen and we only need a fresh code.
+     * Does NOT update payload_json (phone/fields unchanged from the pending row).
      */
-    public void updatePendingForResend(String email, String newOtp) {
+    public void updateOtpOnly(String email, String newOtp) {
         String normalizedEmail = email.toLowerCase().trim();
         PendingRegistration pending = pendingRepo.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new BusinessException("OTP_NOT_FOUND",
                         "No pending registration found for this email. Please register again."));
+
+        pending.setOtpCode(newOtp);
+        pending.setExpiresAt(Instant.now().plus(OTP_EXPIRY_MINUTES, ChronoUnit.MINUTES));
+        pending.setCreatedAt(Instant.now()); // reset cooldown window
+        pendingRepo.save(pending);
+    }
+
+    /**
+     * Update the pending row for a re-register — resets created_at to now
+     * so the cooldown window tracks from this resend, not the original request.
+     *
+     * Also updates payload_json and phone with the latest request data.
+     * This is critical: the user may have corrected their phone number between
+     * attempts, and the old payload_json must not be used at verify-otp time.
+     */
+    public void updatePendingForResend(RegisterRequest request, String newOtp) {
+        String normalizedEmail = request.getEmail().toLowerCase().trim();
+        PendingRegistration pending = pendingRepo.findByEmail(normalizedEmail)
+                .orElseThrow(() -> new BusinessException("OTP_NOT_FOUND",
+                        "No pending registration found for this email. Please register again."));
+
+        try {
+            String payloadJson = objectMapper.writeValueAsString(request);
+            pending.setPhone(request.getPhone().trim());
+            pending.setPayloadJson(payloadJson);
+        } catch (Exception e) {
+            throw new BusinessException("OTP_STORE_FAILED",
+                    "Failed to update pending registration. Please try again.");
+        }
 
         pending.setOtpCode(newOtp);
         pending.setExpiresAt(Instant.now().plus(OTP_EXPIRY_MINUTES, ChronoUnit.MINUTES));

@@ -17,11 +17,13 @@ import lombok.NoArgsConstructor;
 public class KycDocumentResponse {
 
     private String id;
-    private String documentType; // "AADHAAR", "PAN", "LICENSE"
-    private String filePath;
-    private String fileUrl;
-    private String verificationStatus; // "PENDING", "VERIFIED", "REJECTED"
-    private String rejectionReason; // nullable
-    private String uploadedAt;
-    private String verifiedAt; // nullable
+    private Integer documentTypeId;           // numeric ID: 1=DRIVER_LICENSE, 2=PASSPORT, 3=STATE_ID
+    private String documentType;              // human-readable name
+    private String fileName;                  // original filename
+    private String filePath;                  // internal relative path (for backend use)
+    private String fileUrl;                   // full accessible URL
+    private String status;                    // "PENDING", "VERIFIED", "REJECTED"
+    private String rejectionReason;           // nullable
+    private String createdAt;                 // upload timestamp
+    private String reviewedAt;                // nullable — when admin reviewed
 }

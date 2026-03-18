@@ -63,6 +63,7 @@ public class SecurityConfig {
                         .requestMatchers("/files/trucks/**").permitAll()
                         .requestMatchers("/trucks/*/booked-dates").permitAll()
                         .requestMatchers("/trucks/*/availability").permitAll()
+                        .requestMatchers("/users/document-types/kyc").permitAll()
 
                         // Everything else requires authentication
                         .anyRequest().authenticated())
