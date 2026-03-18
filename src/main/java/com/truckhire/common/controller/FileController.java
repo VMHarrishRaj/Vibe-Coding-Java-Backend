@@ -46,12 +46,11 @@ public class FileController {
             @PathVariable String id,
             @PathVariable String filename) {
 
-        User currentUser = SecurityUtils.getCurrentUser();
-        String roleName = currentUser.getRole().getName();
-
         // ── Access control ──
         if ("kyc".equalsIgnoreCase(category)) {
-            // OWNER can only access their own KYC docs; ADMIN can access any
+            // KYC docs require authentication — OWNER can only access their own; ADMIN can access any
+            User currentUser = SecurityUtils.getCurrentUser();
+            String roleName = currentUser.getRole().getName();
             if (Role.OWNER.equals(roleName) && !currentUser.getId().toString().equals(id)) {
                 throw new BusinessException("ACCESS_DENIED", "You can only access your own KYC documents");
             }
@@ -59,8 +58,7 @@ public class FileController {
                 throw new BusinessException("ACCESS_DENIED", "Renters cannot access KYC documents");
             }
         } else if ("trucks".equalsIgnoreCase(category)) {
-            // All authenticated users can access truck documents (RENTER, OWNER, ADMIN)
-            // No additional restriction needed beyond authentication
+            // Truck files are public — SecurityConfig already permits unauthenticated access
         } else {
             throw new BusinessException("INVALID_CATEGORY", "File category must be 'kyc' or 'trucks'");
         }
@@ -73,7 +71,7 @@ public class FileController {
         // Determine Content-Type from filename
         String contentType = determineContentType(filename);
 
-        log.info("File served: path={}, user={}", filePath, currentUser.getId());
+        log.info("File served: path={}", filePath);
 
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(contentType))

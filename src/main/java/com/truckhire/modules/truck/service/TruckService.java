@@ -78,7 +78,7 @@ public class TruckService {
      * - Registration number must be unique
      */
     @Transactional
-    public TruckResponse addTruck(UUID ownerId, CreateTruckRequest request) {
+    public TruckResponse addTruck(UUID ownerId, CreateTruckRequest request, MultipartFile photo) {
         User owner = findOwner(ownerId);
         ensureKycVerified(owner);
 
@@ -114,6 +114,22 @@ public class TruckService {
         Truck saved = truckRepository.save(truck);
         log.info("Truck added: id={}, owner={}, reg={}",
                 saved.getId(), ownerId, saved.getRegistrationNumber());
+
+        // If a photo was included with the creation request, store it immediately
+        if (photo != null && !photo.isEmpty()) {
+            DocumentType photoDocType = documentTypeRepository
+                    .findByNameAndCategory("PHOTO", "VEHICLE")
+                    .orElseThrow(() -> new BusinessException("INVALID_DOCUMENT_TYPE", "PHOTO document type not found"));
+            String subDirectory = "trucks/" + saved.getId();
+            String filePath = fileStorageService.storeFile(photo, subDirectory);
+            TruckDocument doc = TruckDocument.builder()
+                    .truck(saved)
+                    .documentType(photoDocType)
+                    .filePath(filePath)
+                    .build();
+            truckDocumentRepository.save(doc);
+            log.info("Truck photo saved inline: truckId={}, path={}", saved.getId(), filePath);
+        }
 
         return mapToResponse(saved);
     }
@@ -318,15 +334,19 @@ public class TruckService {
         Sort sort = resolveSort(sortBy);
         Pageable sortedPageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
 
-        Page<Truck> page = truckRepository.searchPublicTrucks(
-                city != null && !city.isBlank() ? city.trim().toLowerCase() : null,
-                vehicleType != null && !vehicleType.isBlank() ? vehicleType.toUpperCase() : null,
-                minPrice,
-                maxPrice,
-                minCapacity,
-                availableFrom,
-                availableTo,
-                sortedPageable);
+        String cityLower = city != null && !city.isBlank() ? city.trim().toLowerCase() : null;
+        String vehicleTypeNorm = vehicleType != null && !vehicleType.isBlank() ? vehicleType.toUpperCase() : null;
+
+        Page<Truck> page;
+        if (availableFrom != null) {
+            page = truckRepository.searchPublicTrucksWithDates(
+                    cityLower, vehicleTypeNorm, minPrice, maxPrice, minCapacity,
+                    availableFrom, availableTo, sortedPageable);
+        } else {
+            page = truckRepository.searchPublicTrucks(
+                    cityLower, vehicleTypeNorm, minPrice, maxPrice, minCapacity,
+                    sortedPageable);
+        }
 
         return buildPagedResponseWithAvailability(page);
     }

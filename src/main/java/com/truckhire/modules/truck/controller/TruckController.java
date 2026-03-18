@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -44,16 +45,35 @@ public class TruckController {
     private final TruckService truckService;
 
     /**
-     * POST /api/v1/trucks
-     * Add a new truck. Only KYC-verified owners can do this.
+     * POST /api/v1/trucks (JSON)
+     * Add a new truck via JSON body. Used by web/admin clients.
      */
-    @PostMapping
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize("hasRole('OWNER')")
-    public ResponseEntity<ApiResponse<TruckResponse>> addTruck(
+    public ResponseEntity<ApiResponse<TruckResponse>> addTruckJson(
             @Valid @RequestBody CreateTruckRequest request) {
 
         User owner = SecurityUtils.getCurrentUser();
-        TruckResponse response = truckService.addTruck(owner.getId(), request);
+        TruckResponse response = truckService.addTruck(owner.getId(), request, null);
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Truck added", response));
+    }
+
+    /**
+     * POST /api/v1/trucks (multipart/form-data)
+     * Add a new truck from mobile app — flat form fields + optional photo in one request.
+     * Mobile sends field name "image" for the photo.
+     */
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<ApiResponse<TruckResponse>> addTruckMultipart(
+            @Valid @ModelAttribute CreateTruckRequest request,
+            @RequestParam(value = "image", required = false) MultipartFile photo) {
+
+        User owner = SecurityUtils.getCurrentUser();
+        TruckResponse response = truckService.addTruck(owner.getId(), request, photo);
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)

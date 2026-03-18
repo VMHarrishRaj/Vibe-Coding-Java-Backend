@@ -10,5 +10,7 @@ package com.truckhire.modules.user.entity;
 public enum UserStatus {
     ACTIVE,
     SUSPENDED,
-    PENDING_VERIFICATION
+    PENDING_VERIFICATION,
+    PENDING,
+    REJECTED
 }

@@ -99,7 +99,7 @@ app:
     access-token-expiration-ms: 3600000      # 60 minutes (demo/dev — revert to 900000 before prod)
     refresh-token-expiration-ms: 604800000   # 7 days
   cors:
-    allowed-origins: http://localhost:3000,http://localhost:5173
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
   base-url: ${APP_BASE_URL:http://localhost:8080}
   file-storage:
     upload-dir: ./uploads

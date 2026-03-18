@@ -76,9 +76,15 @@ public class AuthService {
         // This happens when the user closes the OTP screen and retries register.
         // Resend the OTP instead of throwing EMAIL_TAKEN.
         if (otpService.hasPendingRegistration(email)) {
+            // Still check phone uniqueness — the user may have changed their phone,
+            // or another user may have registered with that phone since the pending row was created.
+            if (userRepository.existsByPhoneAndDeletedAtIsNull(phone)) {
+                throw new BusinessException("PHONE_TAKEN", "An account with this phone number already exists");
+            }
             otpService.checkResendCooldown(email);
             String newOtp = otpService.generateOtp();
-            otpService.updatePendingForResend(email, newOtp);
+            // Pass full request so payload_json is refreshed with the latest phone/fields
+            otpService.updatePendingForResend(request, newOtp);
             emailSender.sendOtp(email, newOtp);
             log.info("OTP resent (re-register path): email={}", email);
             return OtpSentResponse.builder()
@@ -188,9 +194,9 @@ public class AuthService {
         // ── Cooldown check (throws OTP_COOLDOWN if < 60 seconds since last send) ──
         otpService.checkResendCooldown(email);
 
-        // ── Generate new OTP and update pending row ──
+        // ── Generate new OTP and update pending row (OTP + expiry only) ──
         String newOtp = otpService.generateOtp();
-        otpService.updatePendingForResend(email, newOtp);
+        otpService.updateOtpOnly(email, newOtp);
 
         // ── Send new OTP ──
         emailSender.sendOtp(email, newOtp);
