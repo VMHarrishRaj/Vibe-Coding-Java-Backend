@@ -5,8 +5,10 @@ import com.truckhire.common.dto.ApiResponse;
 import com.truckhire.modules.auth.security.JwtAuthFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -16,6 +18,9 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /**
  * Spring Security Configuration — Phase 2 (JWT-enabled).
@@ -48,46 +53,99 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+
         http
-                .csrf(AbstractHttpConfigurer::disable)
+            // Enable CORS
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            // Disable CSRF for REST APIs
+            .csrf(AbstractHttpConfigurer::disable)
 
-                // ── Authorization rules ──
-                .authorizeHttpRequests(auth -> auth
-                        // Public endpoints
-                        .requestMatchers("/auth/**").permitAll()
-                        .requestMatchers("/health").permitAll()
-                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                        .requestMatchers("/actuator/health").permitAll()
-                        .requestMatchers("/files/trucks/**").permitAll()
-                        .requestMatchers("/trucks/*/booked-dates").permitAll()
-                        .requestMatchers("/trucks/*/availability").permitAll()
-                        .requestMatchers("/users/document-types/kyc").permitAll()
+            // Stateless session for JWT
+            .sessionManagement(session ->
+                    session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-                        // Everything else requires authentication
-                        .anyRequest().authenticated())
+            // Authorization rules
+            .authorizeHttpRequests(auth -> auth
 
-                // ── Custom 401 response ──
-                // Without this, Spring returns an HTML error page
-                .exceptionHandling(exception -> exception
-                        .authenticationEntryPoint((request, response, authException) -> {
-                            response.setContentType("application/json");
-                            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                            ApiResponse<Void> body = ApiResponse.error(
-                                    "UNAUTHORIZED", "Authentication required. Please provide a valid JWT token.");
-                            response.getWriter().write(objectMapper.writeValueAsString(body));
-                        }))
+                    // Allow preflight CORS requests
+                    .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                // ── Register JWT filter ──
-                // Run JwtAuthFilter BEFORE Spring's default username/password filter
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                    // Public APIs
+                    .requestMatchers("/auth/**").permitAll()
+                    .requestMatchers("/health").permitAll()
+                    .requestMatchers("/actuator/health").permitAll()
+
+                    // Swagger
+                    .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+
+                    // Public file access
+                    .requestMatchers("/files/trucks/**").permitAll()
+
+                    // Truck availability APIs
+                    .requestMatchers("/trucks/*/booked-dates").permitAll()
+                    .requestMatchers("/trucks/*/availability").permitAll()
+
+                    // All other APIs require authentication
+                    .anyRequest().authenticated()
+            )
+
+            // Custom 401 response
+            .exceptionHandling(exception ->
+                    exception.authenticationEntryPoint((request, response, authException) -> {
+
+                        response.setContentType("application/json");
+                        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+
+                        ApiResponse<Void> body = ApiResponse.error(
+                                "UNAUTHORIZED",
+                                "Authentication required. Please provide a valid JWT token."
+                        );
+
+                        response.getWriter().write(objectMapper.writeValueAsString(body));
+                    })
+            )
+
+            // Add JWT filter before Spring security authentication filter
+            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
+    // Password encoder bean
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    // CORS configuration
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+
+        CorsConfiguration config = new CorsConfiguration();
+
+        config.setAllowedOrigins(List.of(
+                "https://truckrent.g-axis.in",
+                "http://localhost:5173"
+        ));
+
+        config.setAllowedMethods(List.of(
+                "GET",
+                "POST",
+                "PUT",
+                "DELETE",
+                "OPTIONS"
+        ));
+
+        config.setAllowedHeaders(List.of("*"));
+
+        config.setAllowCredentials(true);
+
+        UrlBasedCorsConfigurationSource source =
+                new UrlBasedCorsConfigurationSource();
+
+        source.registerCorsConfiguration("/**", config);
+
+        return source;
     }
 }
