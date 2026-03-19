@@ -10,7 +10,9 @@ import com.truckhire.modules.user.dto.*;
 import com.truckhire.modules.user.entity.Role;
 import com.truckhire.modules.user.entity.User;
 import com.truckhire.modules.user.entity.UserStatus;
+import com.truckhire.modules.truck.entity.Truck;
 import com.truckhire.modules.truck.repository.TruckRepository;
+import com.truckhire.modules.booking.repository.BookingRepository;
 import com.truckhire.modules.user.repository.RoleRepository;
 import com.truckhire.modules.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +24,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -62,6 +66,7 @@ public class UserService {
     private final JwtService jwtService;
     private final EmailSender emailSender;
     private final TruckRepository truckRepository;
+    private final BookingRepository bookingRepository;
 
     // ═══════════════════════════════════════
     // USER PROFILE OPERATIONS
@@ -218,6 +223,47 @@ public class UserService {
     public UserProfileResponse getUserById(UUID userId) {
         User user = findActiveUserById(userId);
         return mapToProfileResponse(user);
+    }
+
+    /**
+     * Admin user detail — full profile enriched with truck summary for OWNER role.
+     *
+     * For OWNER: fetches all non-deleted trucks + batch rental counts (3 queries total).
+     * For ADMIN/RENTER: returns profile only (1 query). vehiclesOwned stays null.
+     */
+    @Transactional(readOnly = true)
+    public UserProfileResponse getAdminUserDetail(UUID userId) {
+        User user = findActiveUserById(userId);
+        UserProfileResponse response = mapToProfileResponse(user);
+
+        if (!Role.OWNER.equals(user.getRole().getName())) {
+            return response;
+        }
+
+        List<Truck> trucks = truckRepository.findByOwnerIdAndDeletedAtIsNull(userId);
+        if (trucks.isEmpty()) {
+            response.setVehiclesOwned(List.of());
+            return response;
+        }
+
+        List<UUID> truckIds = trucks.stream().map(Truck::getId).toList();
+        List<Object[]> counts = bookingRepository.countBookingsPerTruck(truckIds);
+        Map<UUID, Long> rentalCountMap = counts.stream()
+                .collect(Collectors.toMap(r -> (UUID) r[0], r -> (Long) r[1]));
+
+        List<OwnedVehicleSummary> vehiclesOwned = trucks.stream()
+                .map(truck -> OwnedVehicleSummary.builder()
+                        .vehicleId(truck.getId().toString())
+                        .registrationNumber(truck.getRegistrationNumber())
+                        .model(truck.getModel())
+                        .capacityTons(truck.getCapacityTons())
+                        .status(truck.getStatus().name())
+                        .rentals(rentalCountMap.getOrDefault(truck.getId(), 0L))
+                        .build())
+                .toList();
+
+        response.setVehiclesOwned(vehiclesOwned);
+        return response;
     }
 
     /**

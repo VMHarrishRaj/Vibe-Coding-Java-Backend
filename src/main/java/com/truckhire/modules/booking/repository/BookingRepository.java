@@ -149,6 +149,17 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             """, nativeQuery = true)
     List<Object[]> sumRevenueGroupedByMonth();
 
+    // Admin user detail: count ACTIVE + COMPLETED bookings per truck (batch — avoids N+1)
+    @Query("""
+            SELECT b.truck.id, COUNT(b)
+            FROM Booking b
+            WHERE b.truck.id IN :truckIds
+              AND b.status IN ('ACTIVE', 'COMPLETED')
+              AND b.deletedAt IS NULL
+            GROUP BY b.truck.id
+            """)
+    List<Object[]> countBookingsPerTruck(@Param("truckIds") List<UUID> truckIds);
+
     // Admin dashboard: monthly booking counts for last 12 months (all statuses)
     @Query(value = """
             SELECT TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM') AS month,

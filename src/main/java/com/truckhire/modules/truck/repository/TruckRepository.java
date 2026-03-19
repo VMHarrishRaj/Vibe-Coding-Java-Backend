@@ -21,6 +21,9 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
     // Owner's trucks (non-deleted)
     Page<Truck> findByOwnerIdAndDeletedAtIsNull(UUID ownerId, Pageable pageable);
 
+    // Admin user detail: all non-deleted trucks for an owner (no pagination)
+    List<Truck> findByOwnerIdAndDeletedAtIsNull(UUID ownerId);
+
     // Public search: only APPROVED trucks
     Page<Truck> findByStatusAndDeletedAtIsNull(TruckStatus status, Pageable pageable);
 

@@ -68,7 +68,7 @@ public class AdminUserController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<UserProfileResponse>> getUserById(@PathVariable UUID id) {
-        UserProfileResponse user = userService.getUserById(id);
+        UserProfileResponse user = userService.getAdminUserDetail(id);
         return ResponseEntity.ok(ApiResponse.success("User retrieved", user));
     }
 
