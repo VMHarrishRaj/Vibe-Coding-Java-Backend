@@ -128,6 +128,29 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
     @Query("SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType WHERE t.deletedAt IS NULL")
     Page<Truck> findAllActiveWithOwner(Pageable pageable);
 
+    // Admin search — free-text across registrationNumber, model, make, owner fullname
+    // :q must be pre-lowercased by the caller
+    @Query("""
+            SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType
+            WHERE t.deletedAt IS NULL
+              AND (LOWER(t.registrationNumber) LIKE :q
+                OR LOWER(t.model) LIKE :q
+                OR LOWER(t.make) LIKE :q
+                OR LOWER(t.owner.fullname) LIKE :q)
+            """)
+    Page<Truck> searchByKeyword(@Param("q") String q, Pageable pageable);
+
+    @Query("""
+            SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType
+            WHERE t.deletedAt IS NULL
+              AND t.status = :status
+              AND (LOWER(t.registrationNumber) LIKE :q
+                OR LOWER(t.model) LIKE :q
+                OR LOWER(t.make) LIKE :q
+                OR LOWER(t.owner.fullname) LIKE :q)
+            """)
+    Page<Truck> searchByKeywordAndStatus(@Param("q") String q, @Param("status") TruckStatus status, Pageable pageable);
+
     @Query("SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType WHERE t.status = :status AND t.deletedAt IS NULL")
     Page<Truck> findByStatusActiveWithOwnerNoOrder(@Param("status") TruckStatus status, Pageable pageable);
 

@@ -186,18 +186,37 @@ public class UserService {
      */
     @Transactional(readOnly = true)
     public PagedResponse<AdminUserListResponse> getAllUsers(
-            String role, String status, Pageable pageable) {
+            String role, String status, String q, Pageable pageable) {
 
         Page<User> userPage;
+        boolean hasRole   = role != null && !role.isBlank();
+        boolean hasStatus = status != null && !status.isBlank();
+        boolean hasQ      = q != null && !q.isBlank();
 
-        if (role != null && status != null) {
+        if (hasQ) {
+            String keyword = "%" + q.toLowerCase().trim() + "%";
+            if (hasRole && hasStatus) {
+                UserStatus userStatus = parseStatus(status);
+                userPage = userRepository.searchByKeywordAndRoleAndStatus(
+                        keyword, role.toUpperCase(), userStatus, pageable);
+            } else if (hasRole) {
+                userPage = userRepository.searchByKeywordAndRole(
+                        keyword, role.toUpperCase(), pageable);
+            } else if (hasStatus) {
+                UserStatus userStatus = parseStatus(status);
+                userPage = userRepository.searchByKeywordAndStatus(
+                        keyword, userStatus, pageable);
+            } else {
+                userPage = userRepository.searchByKeyword(keyword, pageable);
+            }
+        } else if (hasRole && hasStatus) {
             UserStatus userStatus = parseStatus(status);
             userPage = userRepository.findByRole_NameAndStatusAndDeletedAtIsNull(
                     role.toUpperCase(), userStatus, pageable);
-        } else if (role != null) {
+        } else if (hasRole) {
             userPage = userRepository.findByRole_NameAndDeletedAtIsNull(
                     role.toUpperCase(), pageable);
-        } else if (status != null) {
+        } else if (hasStatus) {
             UserStatus userStatus = parseStatus(status);
             userPage = userRepository.findByStatusAndDeletedAtIsNull(userStatus, pageable);
         } else {

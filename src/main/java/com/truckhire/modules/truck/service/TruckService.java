@@ -481,24 +481,36 @@ public class TruckService {
     // ═══════════════════════════════════════
 
     /**
-     * Admin: List all trucks (any status), optionally filtered by status.
+     * Admin: List all trucks, optionally filtered by status and/or free-text keyword.
+     * q searches: registrationNumber, model, make, owner name (case-insensitive LIKE).
      */
     @Transactional(readOnly = true)
-    public PagedResponse<TruckListResponse> getAllTrucks(String status, Pageable pageable) {
+    public PagedResponse<TruckListResponse> getAllTrucks(String status, String q, Pageable pageable) {
         Page<Truck> page;
-        if (status == null || status.isBlank()) {
-            page = truckRepository.findAllActiveWithOwner(pageable);
-        } else {
-            TruckStatus truckStatus;
+        boolean hasStatus = status != null && !status.isBlank();
+        boolean hasQ      = q != null && !q.isBlank();
+
+        TruckStatus truckStatus = null;
+        if (hasStatus) {
             try {
                 truckStatus = TruckStatus.valueOf(status.toUpperCase());
             } catch (IllegalArgumentException e) {
-                throw new BusinessException("INVALID_STATUS",
-                        "Invalid truck status: " + status +
-                        ". Must be one of: PENDING_APPROVAL, APPROVED, REJECTED, INACTIVE");
+                // Unrecognized status — treat as no filter rather than erroring.
+                hasStatus = false;
             }
-            page = truckRepository.findByStatusActiveWithOwnerNoOrder(truckStatus, pageable);
         }
+
+        if (hasQ) {
+            String keyword = "%" + q.toLowerCase().trim() + "%";
+            page = hasStatus
+                    ? truckRepository.searchByKeywordAndStatus(keyword, truckStatus, pageable)
+                    : truckRepository.searchByKeyword(keyword, pageable);
+        } else if (hasStatus) {
+            page = truckRepository.findByStatusActiveWithOwnerNoOrder(truckStatus, pageable);
+        } else {
+            page = truckRepository.findAllActiveWithOwner(pageable);
+        }
+
         return buildPagedResponse(page);
     }
 

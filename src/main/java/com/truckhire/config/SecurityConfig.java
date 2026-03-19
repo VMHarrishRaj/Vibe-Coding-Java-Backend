@@ -82,6 +82,9 @@ public class SecurityConfig {
                     // Public file access
                     .requestMatchers("/files/trucks/**").permitAll()
 
+                    // Enum values for frontend dropdowns (public)
+                    .requestMatchers("/config/enums").permitAll()
+
                     // Truck availability APIs
                     .requestMatchers("/trucks/*/booked-dates").permitAll()
                     .requestMatchers("/trucks/*/availability").permitAll()

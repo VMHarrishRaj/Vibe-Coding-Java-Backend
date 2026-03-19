@@ -94,16 +94,28 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     Page<Booking> findByOwnerIdAndStatusOrderByCreatedAtDesc(UUID ownerId, BookingStatus status, Pageable pageable);
 
     /**
-     * Admin: all bookings with full details, optional status filter.
+     * Admin: all bookings with full details — no status filter.
      * JOIN FETCH prevents N+1 on truck and user associations.
      */
     @Query("""
             SELECT b FROM Booking b
             JOIN FETCH b.truck JOIN FETCH b.renter JOIN FETCH b.owner
-            WHERE (:status IS NULL OR b.status = :status)
             ORDER BY b.createdAt DESC
             """)
-    Page<Booking> findAllWithDetails(@Param("status") BookingStatus status, Pageable pageable);
+    Page<Booking> findAllWithDetails(Pageable pageable);
+
+    /**
+     * Admin: all bookings with full details — filtered by status.
+     * Split from the unfiltered variant to avoid Hibernate's inability to infer
+     * the type of a nullable enum bind parameter on PostgreSQL.
+     */
+    @Query("""
+            SELECT b FROM Booking b
+            JOIN FETCH b.truck JOIN FETCH b.renter JOIN FETCH b.owner
+            WHERE b.status = :status
+            ORDER BY b.createdAt DESC
+            """)
+    Page<Booking> findAllWithDetailsByStatus(@Param("status") BookingStatus status, Pageable pageable);
 
     /**
      * Full booking detail with all associations for the detail endpoint.
@@ -148,6 +160,31 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             ORDER BY month ASC
             """, nativeQuery = true)
     List<Object[]> sumRevenueGroupedByMonth();
+
+    // Admin search — free-text across bookingNumber, renter name, truck model/make
+    // :q must be pre-lowercased by the caller
+    @Query("""
+            SELECT b FROM Booking b
+            JOIN FETCH b.truck JOIN FETCH b.renter JOIN FETCH b.owner
+            WHERE (LOWER(b.bookingNumber) LIKE :q
+                OR LOWER(b.renter.fullname) LIKE :q
+                OR LOWER(b.truck.model) LIKE :q
+                OR LOWER(b.truck.make) LIKE :q)
+            ORDER BY b.createdAt DESC
+            """)
+    Page<Booking> searchByKeyword(@Param("q") String q, Pageable pageable);
+
+    @Query("""
+            SELECT b FROM Booking b
+            JOIN FETCH b.truck JOIN FETCH b.renter JOIN FETCH b.owner
+            WHERE b.status = :status
+              AND (LOWER(b.bookingNumber) LIKE :q
+                OR LOWER(b.renter.fullname) LIKE :q
+                OR LOWER(b.truck.model) LIKE :q
+                OR LOWER(b.truck.make) LIKE :q)
+            ORDER BY b.createdAt DESC
+            """)
+    Page<Booking> searchByKeywordAndStatus(@Param("q") String q, @Param("status") BookingStatus status, Pageable pageable);
 
     // Admin user detail: count ACTIVE + COMPLETED bookings per truck (batch — avoids N+1)
     @Query("""

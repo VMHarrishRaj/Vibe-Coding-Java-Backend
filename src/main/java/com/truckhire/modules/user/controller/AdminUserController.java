@@ -57,9 +57,10 @@ public class AdminUserController {
     public ResponseEntity<ApiResponse<PagedResponse<AdminUserListResponse>>> getAllUsers(
             @RequestParam(required = false) String role,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String q,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
 
-        PagedResponse<AdminUserListResponse> users = userService.getAllUsers(role, status, pageable);
+        PagedResponse<AdminUserListResponse> users = userService.getAllUsers(role, status, q, pageable);
         return ResponseEntity.ok(ApiResponse.success("Users retrieved", users));
     }
 
