@@ -9,6 +9,7 @@ import com.truckhire.modules.user.entity.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -157,7 +158,7 @@ public class TruckController {
     @GetMapping("/mine")
     @PreAuthorize("hasRole('OWNER')")
     public ResponseEntity<ApiResponse<PagedResponse<TruckListResponse>>> getMyTrucks(
-            @PageableDefault(size = 20) Pageable pageable) {
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
 
         User owner = SecurityUtils.getCurrentUser();
         PagedResponse<TruckListResponse> trucks = truckService.getMyTrucks(

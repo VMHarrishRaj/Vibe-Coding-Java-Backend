@@ -49,25 +49,33 @@ public class EmailSenderImpl implements EmailSender {
     }
 
     @Override
-    public void sendWelcomeEmail(String toEmail, String fullname, String tempPassword) {
-        String subject = "Welcome to TruckRental — Your Account is Ready";
+    public void sendWelcomeEmail(String toEmail, String fullname, String tempPassword, String role) {
+        String subject = "Welcome to TruckRental — Your Account Credentials";
+
+        String roleSpecificMessage = "OWNER".equalsIgnoreCase(role)
+                ? "Your TruckRental <b>Owner</b> account has been set up by an administrator. " +
+                  "To start listing your trucks, log in to the mobile app, upload your KYC documents, and wait for admin verification."
+                : "Your TruckRental <b>Renter</b> account has been set up by an administrator. " +
+                  "To start booking trucks, log in to the mobile app, upload your KYC documents, and wait for admin verification.";
+
         String html = """
                 <html>
                     <body style="font-family: Arial, sans-serif; line-height: 1.6;">
                         <h2>Welcome %s,</h2>
-                        <p>Your <b>TruckRental</b> account has been created by an administrator.</p>
-                        <p>Your login details are:</p>
+                        <p>%s</p>
+                        <p>Your login credentials are:</p>
                         <ul>
                             <li><b>Email:</b> %s</li>
                             <li><b>Password:</b> %s</li>
-                            <li><b>Login here:</b> <a href="%s">%s</a></li>
                         </ul>
-                        <p style="color: red;">&#9888;&#65039; For security purposes, please log in and change your password immediately.</p>
+                        <p>Please log in using the <b>TruckRental mobile app</b>.</p>
+                        <p style="color: gray; font-size: 13px;">&#128241; App download link will be shared with you separately.</p>
+                        <p style="color: red;">&#9888;&#65039; For security purposes, please change your password after your first login.</p>
                         <hr>
                         <p style="font-size: 12px; color: gray;">This is an automated email from <b>TruckRental</b>. Do not reply to this message.</p>
                     </body>
                 </html>
-                """.formatted(fullname, toEmail, tempPassword, appBaseUrl, appBaseUrl);
+                """.formatted(fullname, roleSpecificMessage, toEmail, tempPassword);
 
         sendHtml(toEmail, subject, html);
         log.info("Welcome email sent to {}", toEmail);

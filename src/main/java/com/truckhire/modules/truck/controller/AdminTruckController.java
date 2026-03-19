@@ -9,6 +9,7 @@ import com.truckhire.modules.truck.service.TruckService;
 import com.truckhire.modules.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -41,7 +42,7 @@ public class AdminTruckController {
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<TruckListResponse>>> getAllTrucks(
             @RequestParam(required = false) String status,
-            @PageableDefault(size = 20) Pageable pageable) {
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
 
         PagedResponse<TruckListResponse> trucks = truckService.getAllTrucks(status, pageable);
         return ResponseEntity.ok(ApiResponse.success("All trucks retrieved", trucks));
@@ -61,7 +62,7 @@ public class AdminTruckController {
      */
     @GetMapping("/pending")
     public ResponseEntity<ApiResponse<PagedResponse<TruckListResponse>>> getPendingTrucks(
-            @PageableDefault(size = 20) Pageable pageable) {
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
 
         PagedResponse<TruckListResponse> trucks = truckService.getPendingTrucks(pageable);
         return ResponseEntity.ok(ApiResponse.success("Pending trucks retrieved", trucks));

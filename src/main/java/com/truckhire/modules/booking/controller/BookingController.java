@@ -9,6 +9,7 @@ import com.truckhire.modules.user.entity.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -48,7 +49,7 @@ public class BookingController {
     @PreAuthorize("hasRole('RENTER')")
     public ResponseEntity<ApiResponse<PagedResponse<BookingListResponse>>> getMyBookingsAsRenter(
             @RequestParam(required = false) String status,
-            @PageableDefault(size = 10, sort = "createdAt") Pageable pageable) {
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         User currentUser = SecurityUtils.getCurrentUser();
         PagedResponse<BookingListResponse> response =
                 bookingService.getMyBookingsAsRenter(currentUser.getId(), status, pageable);
@@ -78,7 +79,7 @@ public class BookingController {
     @PreAuthorize("hasRole('OWNER')")
     public ResponseEntity<ApiResponse<PagedResponse<BookingListResponse>>> getMyBookingsAsOwner(
             @RequestParam(required = false) String status,
-            @PageableDefault(size = 10, sort = "createdAt") Pageable pageable) {
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         User currentUser = SecurityUtils.getCurrentUser();
         PagedResponse<BookingListResponse> response =
                 bookingService.getMyBookingsAsOwner(currentUser.getId(), status, pageable);
