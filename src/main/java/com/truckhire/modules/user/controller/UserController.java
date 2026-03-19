@@ -6,9 +6,7 @@ import com.truckhire.modules.user.dto.KycDocumentResponse;
 import com.truckhire.modules.user.dto.UpdateBankRequest;
 import com.truckhire.modules.user.dto.UpdateProfileRequest;
 import com.truckhire.modules.user.dto.UserProfileResponse;
-import com.truckhire.modules.user.entity.DocumentType;
 import com.truckhire.modules.user.entity.User;
-import com.truckhire.modules.user.repository.DocumentTypeRepository;
 import com.truckhire.modules.user.service.KycService;
 import com.truckhire.modules.user.service.UserService;
 import jakarta.validation.Valid;
@@ -41,7 +39,6 @@ public class UserController {
 
     private final UserService userService;
     private final KycService kycService;
-    private final DocumentTypeRepository documentTypeRepository;
 
     /**
      * GET /api/v1/users/me
@@ -139,13 +136,14 @@ public class UserController {
      */
     @GetMapping("/document-types/kyc")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getKycDocumentTypes() {
-        List<Map<String, Object>> types = documentTypeRepository.findAll().stream()
-                .filter(dt -> "KYC".equals(dt.getCategory()) && dt.isActive())
-                .map(dt -> Map.<String, Object>of(
-                        "id", dt.getId(),
-                        "name", dt.getName()
-                ))
-                .toList();
+        // Return stable virtual IDs (1/2/3) regardless of actual DB IDs.
+        // The mobile app uses these IDs when calling POST /users/me/kyc.
+        // KycService maps these virtual IDs back to document type names for DB lookup.
+        List<Map<String, Object>> types = List.of(
+                Map.<String, Object>of("id", 1, "name", "DRIVER_LICENSE"),
+                Map.<String, Object>of("id", 2, "name", "PASSPORT"),
+                Map.<String, Object>of("id", 3, "name", "STATE_ID")
+        );
         return ResponseEntity.ok(ApiResponse.success("KYC document types retrieved", types));
     }
 }

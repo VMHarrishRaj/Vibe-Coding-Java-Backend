@@ -15,7 +15,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  *
  * This config tells Spring: "Allow requests from these origins."
  */
-@Configuration
+// @Configuration — disabled: CORS is now handled by SecurityConfig.corsConfigurationSource()
 public class CorsConfig implements WebMvcConfigurer {
 
     @Value("${app.cors.allowed-origins}")
