@@ -63,11 +63,21 @@ public class KycService {
     public KycDocumentResponse uploadKycDocument(UUID userId, Integer documentTypeId, MultipartFile file) {
         User user = findUserById(userId);
 
-        // Validate document type exists, is KYC category, and ID is one of the known US types (1/2/3)
-        DocumentType docType = documentTypeRepository.findById(documentTypeId)
-                .filter(dt -> "KYC".equals(dt.getCategory()) && dt.isActive())
+        // Translate virtual ID (1/2/3 as sent by mobile) → KYC document type name.
+        // The DB IDs for KYC types are not guaranteed to be 1/2/3 due to migration history,
+        // so we maintain a stable virtual ID contract here and look up by name instead.
+        String kycTypeName = switch (documentTypeId) {
+            case 1 -> "DRIVER_LICENSE";
+            case 2 -> "PASSPORT";
+            case 3 -> "STATE_ID";
+            default -> throw new BusinessException("INVALID_DOCUMENT_TYPE",
+                    "Invalid documentTypeId: " + documentTypeId + ". Must be 1 (Driver's License), 2 (Passport), or 3 (State ID)");
+        };
+
+        DocumentType docType = documentTypeRepository.findByNameAndCategory(kycTypeName, "KYC")
+                .filter(DocumentType::isActive)
                 .orElseThrow(() -> new BusinessException("INVALID_DOCUMENT_TYPE",
-                        "Invalid documentTypeId: " + documentTypeId + ". Must be 1 (Driver's License), 2 (Passport), or 3 (State ID)"));
+                        "Document type " + kycTypeName + " is not configured in the system"));
 
         // Store file: uploads/kyc/{userId}/{uuid}_originalname.ext
         String subDirectory = "kyc/" + userId;
