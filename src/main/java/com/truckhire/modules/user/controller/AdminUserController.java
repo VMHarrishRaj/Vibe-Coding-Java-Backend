@@ -16,6 +16,7 @@ import com.truckhire.modules.user.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -56,7 +57,7 @@ public class AdminUserController {
     public ResponseEntity<ApiResponse<PagedResponse<AdminUserListResponse>>> getAllUsers(
             @RequestParam(required = false) String role,
             @RequestParam(required = false) String status,
-            @PageableDefault(size = 20) Pageable pageable) {
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
 
         PagedResponse<AdminUserListResponse> users = userService.getAllUsers(role, status, pageable);
         return ResponseEntity.ok(ApiResponse.success("Users retrieved", users));
