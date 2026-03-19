@@ -11,7 +11,6 @@ import com.truckhire.modules.user.repository.RoleRepository;
 import com.truckhire.modules.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -222,14 +221,14 @@ public class AuthService {
     public AuthResponse login(LoginRequest request) {
 
         User user = userRepository.findByEmail(request.getEmail().toLowerCase().trim())
-                .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
+                .orElseThrow(() -> new BusinessException("EMAIL_NOT_FOUND", "Email not found"));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            throw new BadCredentialsException("Invalid email or password");
+            throw new BusinessException("INCORRECT_PASSWORD", "Incorrect password");
         }
 
         if (user.getStatus() == UserStatus.SUSPENDED) {
-            throw new BusinessException("ACCOUNT_SUSPENDED", "Your account has been suspended. Contact support.");
+            throw new BusinessException("UNAUTHORIZED", "User is not authorized");
         }
 
         String token = jwtService.generateAccessToken(user.getId(), user.getEmail(), user.getRole().getName());
