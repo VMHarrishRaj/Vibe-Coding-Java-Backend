@@ -211,9 +211,14 @@ public class AuthService {
      * Login an existing user.
      *
      * FLOW:
-     * 1. Find user by email → throw 401 if not found
-     * 2. Check password matches the hash → throw 401 if wrong
-     * 3. Check account is ACTIVE → throw 409 if suspended
+     * 1. Find user by email → EMAIL_NOT_FOUND if not found
+     * 2. Check password matches the hash → INCORRECT_PASSWORD if wrong
+     * 3. Check account status — each non-ACTIVE status returns a specific error:
+     *    SUSPENDED            → ACCOUNT_SUSPENDED
+     *    REJECTED             → ACCOUNT_REJECTED
+     *    PENDING_VERIFICATION → ACCOUNT_PENDING_VERIFICATION
+     *    PENDING              → ACCOUNT_PENDING
+     *    anything else        → ACCOUNT_INACTIVE
      * 4. Generate JWT token
      * 5. Return AuthResponse
      */
@@ -221,14 +226,26 @@ public class AuthService {
     public AuthResponse login(LoginRequest request) {
 
         User user = userRepository.findByEmail(request.getEmail().toLowerCase().trim())
-                .orElseThrow(() -> new BusinessException("EMAIL_NOT_FOUND", "Email not found"));
+                .orElseThrow(() -> new BusinessException("EMAIL_NOT_FOUND",
+                        "We couldn't find an account with that email address."));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            throw new BusinessException("INCORRECT_PASSWORD", "Incorrect password");
+            throw new BusinessException("INCORRECT_PASSWORD",
+                    "Incorrect password. Please try again or reset your password.");
         }
 
-        if (user.getStatus() == UserStatus.SUSPENDED) {
-            throw new BusinessException("UNAUTHORIZED", "User is not authorized");
+        switch (user.getStatus()) {
+            case ACTIVE -> { /* proceed */ }
+            case SUSPENDED -> throw new BusinessException("ACCOUNT_SUSPENDED",
+                    "Your account has been suspended. Please contact support.");
+            case REJECTED -> throw new BusinessException("ACCOUNT_REJECTED",
+                    "Your account application was rejected. Please contact support for assistance.");
+            case PENDING_VERIFICATION -> throw new BusinessException("ACCOUNT_PENDING_VERIFICATION",
+                    "Your account is pending KYC verification. Please complete your verification to continue.");
+            case PENDING -> throw new BusinessException("ACCOUNT_PENDING",
+                    "Please verify your email address before logging in.");
+            default -> throw new BusinessException("ACCOUNT_INACTIVE",
+                    "Your account is currently inactive. Please contact support.");
         }
 
         String token = jwtService.generateAccessToken(user.getId(), user.getEmail(), user.getRole().getName());
