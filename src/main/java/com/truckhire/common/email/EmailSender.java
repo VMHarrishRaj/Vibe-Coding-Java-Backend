@@ -14,9 +14,10 @@ public interface EmailSender {
 
     /**
      * Send a welcome email to a user created by an admin.
-     * Contains their login email and temporary password.
+     * Contains their login email, temporary password, and role-specific next steps.
+     * @param role  "OWNER" or "RENTER" — determines the KYC guidance in the body
      */
-    void sendWelcomeEmail(String toEmail, String fullname, String tempPassword);
+    void sendWelcomeEmail(String toEmail, String fullname, String tempPassword, String role);
 
     /**
      * Send a password reset OTP to the given email address.

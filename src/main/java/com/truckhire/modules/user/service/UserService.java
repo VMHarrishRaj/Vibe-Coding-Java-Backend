@@ -331,7 +331,7 @@ public class UserService {
         // Non-blocking: email failure must not roll back user creation.
         // The user is saved; a failed email is logged for manual follow-up.
         try {
-            emailSender.sendWelcomeEmail(savedUser.getEmail(), savedUser.getFullname(), temporaryPassword);
+            emailSender.sendWelcomeEmail(savedUser.getEmail(), savedUser.getFullname(), temporaryPassword, roleName);
         } catch (Exception e) {
             log.error("Welcome email failed for user {}: {}", savedUser.getId(), e.getMessage());
         }
