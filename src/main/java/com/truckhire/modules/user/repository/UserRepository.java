@@ -6,6 +6,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
@@ -51,6 +52,41 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     Page<User> findByRole_NameAndStatusAndDeletedAtIsNull(
             String roleName, UserStatus status, Pageable pageable);
+
+    // ── Admin search — free-text across fullname, email, phone ──
+    // :q must be pre-lowercased by the caller (avoids Hibernate bytea issue with LOWER on nullable)
+
+    @Query("""
+            SELECT u FROM User u
+            WHERE u.deletedAt IS NULL
+              AND (LOWER(u.fullname) LIKE :q OR LOWER(u.email) LIKE :q OR u.phone LIKE :q)
+            """)
+    Page<User> searchByKeyword(@Param("q") String q, Pageable pageable);
+
+    @Query("""
+            SELECT u FROM User u
+            WHERE u.deletedAt IS NULL
+              AND u.role.name = :role
+              AND (LOWER(u.fullname) LIKE :q OR LOWER(u.email) LIKE :q OR u.phone LIKE :q)
+            """)
+    Page<User> searchByKeywordAndRole(@Param("q") String q, @Param("role") String role, Pageable pageable);
+
+    @Query("""
+            SELECT u FROM User u
+            WHERE u.deletedAt IS NULL
+              AND u.status = :status
+              AND (LOWER(u.fullname) LIKE :q OR LOWER(u.email) LIKE :q OR u.phone LIKE :q)
+            """)
+    Page<User> searchByKeywordAndStatus(@Param("q") String q, @Param("status") UserStatus status, Pageable pageable);
+
+    @Query("""
+            SELECT u FROM User u
+            WHERE u.deletedAt IS NULL
+              AND u.role.name = :role
+              AND u.status = :status
+              AND (LOWER(u.fullname) LIKE :q OR LOWER(u.email) LIKE :q OR u.phone LIKE :q)
+            """)
+    Page<User> searchByKeywordAndRoleAndStatus(@Param("q") String q, @Param("role") String role, @Param("status") UserStatus status, Pageable pageable);
 
     // ── Admin guard: prevent suspending the last active admin ──
 

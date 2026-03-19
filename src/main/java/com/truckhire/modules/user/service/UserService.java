@@ -10,7 +10,9 @@ import com.truckhire.modules.user.dto.*;
 import com.truckhire.modules.user.entity.Role;
 import com.truckhire.modules.user.entity.User;
 import com.truckhire.modules.user.entity.UserStatus;
+import com.truckhire.modules.truck.entity.Truck;
 import com.truckhire.modules.truck.repository.TruckRepository;
+import com.truckhire.modules.booking.repository.BookingRepository;
 import com.truckhire.modules.user.repository.RoleRepository;
 import com.truckhire.modules.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +24,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -62,6 +66,7 @@ public class UserService {
     private final JwtService jwtService;
     private final EmailSender emailSender;
     private final TruckRepository truckRepository;
+    private final BookingRepository bookingRepository;
 
     // ═══════════════════════════════════════
     // USER PROFILE OPERATIONS
@@ -181,18 +186,37 @@ public class UserService {
      */
     @Transactional(readOnly = true)
     public PagedResponse<AdminUserListResponse> getAllUsers(
-            String role, String status, Pageable pageable) {
+            String role, String status, String q, Pageable pageable) {
 
         Page<User> userPage;
+        boolean hasRole   = role != null && !role.isBlank();
+        boolean hasStatus = status != null && !status.isBlank();
+        boolean hasQ      = q != null && !q.isBlank();
 
-        if (role != null && status != null) {
+        if (hasQ) {
+            String keyword = "%" + q.toLowerCase().trim() + "%";
+            if (hasRole && hasStatus) {
+                UserStatus userStatus = parseStatus(status);
+                userPage = userRepository.searchByKeywordAndRoleAndStatus(
+                        keyword, role.toUpperCase(), userStatus, pageable);
+            } else if (hasRole) {
+                userPage = userRepository.searchByKeywordAndRole(
+                        keyword, role.toUpperCase(), pageable);
+            } else if (hasStatus) {
+                UserStatus userStatus = parseStatus(status);
+                userPage = userRepository.searchByKeywordAndStatus(
+                        keyword, userStatus, pageable);
+            } else {
+                userPage = userRepository.searchByKeyword(keyword, pageable);
+            }
+        } else if (hasRole && hasStatus) {
             UserStatus userStatus = parseStatus(status);
             userPage = userRepository.findByRole_NameAndStatusAndDeletedAtIsNull(
                     role.toUpperCase(), userStatus, pageable);
-        } else if (role != null) {
+        } else if (hasRole) {
             userPage = userRepository.findByRole_NameAndDeletedAtIsNull(
                     role.toUpperCase(), pageable);
-        } else if (status != null) {
+        } else if (hasStatus) {
             UserStatus userStatus = parseStatus(status);
             userPage = userRepository.findByStatusAndDeletedAtIsNull(userStatus, pageable);
         } else {
@@ -218,6 +242,47 @@ public class UserService {
     public UserProfileResponse getUserById(UUID userId) {
         User user = findActiveUserById(userId);
         return mapToProfileResponse(user);
+    }
+
+    /**
+     * Admin user detail — full profile enriched with truck summary for OWNER role.
+     *
+     * For OWNER: fetches all non-deleted trucks + batch rental counts (3 queries total).
+     * For ADMIN/RENTER: returns profile only (1 query). vehiclesOwned stays null.
+     */
+    @Transactional(readOnly = true)
+    public UserProfileResponse getAdminUserDetail(UUID userId) {
+        User user = findActiveUserById(userId);
+        UserProfileResponse response = mapToProfileResponse(user);
+
+        if (!Role.OWNER.equals(user.getRole().getName())) {
+            return response;
+        }
+
+        List<Truck> trucks = truckRepository.findByOwnerIdAndDeletedAtIsNull(userId);
+        if (trucks.isEmpty()) {
+            response.setVehiclesOwned(List.of());
+            return response;
+        }
+
+        List<UUID> truckIds = trucks.stream().map(Truck::getId).toList();
+        List<Object[]> counts = bookingRepository.countBookingsPerTruck(truckIds);
+        Map<UUID, Long> rentalCountMap = counts.stream()
+                .collect(Collectors.toMap(r -> (UUID) r[0], r -> (Long) r[1]));
+
+        List<OwnedVehicleSummary> vehiclesOwned = trucks.stream()
+                .map(truck -> OwnedVehicleSummary.builder()
+                        .vehicleId(truck.getId().toString())
+                        .registrationNumber(truck.getRegistrationNumber())
+                        .model(truck.getModel())
+                        .capacityTons(truck.getCapacityTons())
+                        .status(truck.getStatus().name())
+                        .rentals(rentalCountMap.getOrDefault(truck.getId(), 0L))
+                        .build())
+                .toList();
+
+        response.setVehiclesOwned(vehiclesOwned);
+        return response;
     }
 
     /**

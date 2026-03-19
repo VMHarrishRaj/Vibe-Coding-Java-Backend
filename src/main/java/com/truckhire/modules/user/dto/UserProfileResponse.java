@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  * User Profile Response DTO — full profile returned by GET /users/me.
  *
@@ -58,4 +60,7 @@ public class UserProfileResponse {
 
     // ── Metadata ──
     private String createdAt; // ISO timestamp — "member since"
+
+    // ── OWNER role only — null for ADMIN/RENTER ──
+    private List<OwnedVehicleSummary> vehiclesOwned;
 }

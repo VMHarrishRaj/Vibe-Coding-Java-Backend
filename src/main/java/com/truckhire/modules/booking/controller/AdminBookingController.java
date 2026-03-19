@@ -35,8 +35,9 @@ public class AdminBookingController {
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<BookingListResponse>>> getAllBookings(
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String q,
             @PageableDefault(size = 20) Pageable pageable) {
-        PagedResponse<BookingListResponse> response = bookingService.getAllBookings(status, pageable);
+        PagedResponse<BookingListResponse> response = bookingService.getAllBookings(status, q, pageable);
         return ResponseEntity.ok(ApiResponse.success("Bookings retrieved", response));
     }
 

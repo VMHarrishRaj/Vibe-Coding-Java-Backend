@@ -374,9 +374,22 @@ public class BookingService {
      * Admin: paginated list of all bookings, optional status filter.
      */
     @Transactional(readOnly = true)
-    public PagedResponse<BookingListResponse> getAllBookings(String statusFilter, Pageable pageable) {
+    public PagedResponse<BookingListResponse> getAllBookings(String statusFilter, String q, Pageable pageable) {
         BookingStatus status = parseStatusFilter(statusFilter);
-        Page<Booking> page = bookingRepository.findAllWithDetails(status, pageable);
+        boolean hasQ = q != null && !q.isBlank();
+        Page<Booking> page;
+
+        if (hasQ) {
+            String keyword = "%" + q.toLowerCase().trim() + "%";
+            page = (status == null)
+                    ? bookingRepository.searchByKeyword(keyword, pageable)
+                    : bookingRepository.searchByKeywordAndStatus(keyword, status, pageable);
+        } else {
+            page = (status == null)
+                    ? bookingRepository.findAllWithDetails(pageable)
+                    : bookingRepository.findAllWithDetailsByStatus(status, pageable);
+        }
+
         return buildListPagedResponse(page);
     }
 
@@ -482,8 +495,9 @@ public class BookingService {
         try {
             return BookingStatus.valueOf(statusFilter.toUpperCase());
         } catch (IllegalArgumentException e) {
-            throw new BusinessException("INVALID_STATUS",
-                    "Invalid booking status: " + statusFilter);
+            // Unrecognized status — treat as no filter rather than erroring.
+            // Filtering with no matching data should return an empty list, not 409.
+            return null;
         }
     }
 
