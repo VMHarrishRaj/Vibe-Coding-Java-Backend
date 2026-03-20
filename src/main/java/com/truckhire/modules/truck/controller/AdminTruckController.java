@@ -42,7 +42,7 @@ public class AdminTruckController {
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<TruckListResponse>>> getAllTrucks(
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) String q,
+            @RequestParam(name = "search", required = false) String q,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
 
         PagedResponse<TruckListResponse> trucks = truckService.getAllTrucks(status, q, pageable);
