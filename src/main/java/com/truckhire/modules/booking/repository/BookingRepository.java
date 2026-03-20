@@ -96,24 +96,32 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     /**
      * Admin: all bookings with full details — no status filter.
      * JOIN FETCH prevents N+1 on truck and user associations.
+     * countQuery uses plain JOIN (not JOIN FETCH) — Hibernate cannot derive COUNT from JOIN FETCH.
      */
-    @Query("""
+    @Query(value = """
             SELECT b FROM Booking b
             JOIN FETCH b.truck JOIN FETCH b.renter JOIN FETCH b.owner
             ORDER BY b.createdAt DESC
-            """)
+            """,
+            countQuery = "SELECT COUNT(b) FROM Booking b JOIN b.truck JOIN b.renter JOIN b.owner")
     Page<Booking> findAllWithDetails(Pageable pageable);
 
     /**
      * Admin: all bookings with full details — filtered by status.
      * Split from the unfiltered variant to avoid Hibernate's inability to infer
      * the type of a nullable enum bind parameter on PostgreSQL.
+     * countQuery uses plain JOIN — Hibernate cannot derive COUNT from JOIN FETCH.
      */
-    @Query("""
+    @Query(value = """
             SELECT b FROM Booking b
             JOIN FETCH b.truck JOIN FETCH b.renter JOIN FETCH b.owner
             WHERE b.status = :status
             ORDER BY b.createdAt DESC
+            """,
+            countQuery = """
+            SELECT COUNT(b) FROM Booking b
+            JOIN b.truck JOIN b.renter JOIN b.owner
+            WHERE b.status = :status
             """)
     Page<Booking> findAllWithDetailsByStatus(@Param("status") BookingStatus status, Pageable pageable);
 
@@ -163,7 +171,8 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 
     // Admin search — free-text across bookingNumber, renter name, truck model/make
     // :q must be pre-lowercased by the caller
-    @Query("""
+    // countQuery uses plain JOIN — Hibernate cannot derive COUNT from JOIN FETCH.
+    @Query(value = """
             SELECT b FROM Booking b
             JOIN FETCH b.truck JOIN FETCH b.renter JOIN FETCH b.owner
             WHERE (LOWER(b.bookingNumber) LIKE :q
@@ -171,10 +180,18 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
                 OR LOWER(b.truck.model) LIKE :q
                 OR LOWER(b.truck.make) LIKE :q)
             ORDER BY b.createdAt DESC
+            """,
+            countQuery = """
+            SELECT COUNT(b) FROM Booking b
+            JOIN b.truck JOIN b.renter JOIN b.owner
+            WHERE (LOWER(b.bookingNumber) LIKE :q
+                OR LOWER(b.renter.fullname) LIKE :q
+                OR LOWER(b.truck.model) LIKE :q
+                OR LOWER(b.truck.make) LIKE :q)
             """)
     Page<Booking> searchByKeyword(@Param("q") String q, Pageable pageable);
 
-    @Query("""
+    @Query(value = """
             SELECT b FROM Booking b
             JOIN FETCH b.truck JOIN FETCH b.renter JOIN FETCH b.owner
             WHERE b.status = :status
@@ -183,6 +200,15 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
                 OR LOWER(b.truck.model) LIKE :q
                 OR LOWER(b.truck.make) LIKE :q)
             ORDER BY b.createdAt DESC
+            """,
+            countQuery = """
+            SELECT COUNT(b) FROM Booking b
+            JOIN b.truck JOIN b.renter JOIN b.owner
+            WHERE b.status = :status
+              AND (LOWER(b.bookingNumber) LIKE :q
+                OR LOWER(b.renter.fullname) LIKE :q
+                OR LOWER(b.truck.model) LIKE :q
+                OR LOWER(b.truck.make) LIKE :q)
             """)
     Page<Booking> searchByKeywordAndStatus(@Param("q") String q, @Param("status") BookingStatus status, Pageable pageable);
 
