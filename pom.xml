@@ -176,6 +176,20 @@
             <version>4.0.0</version>
         </dependency>
 
+        <!-- ── PAYMENT GATEWAYS ── -->
+        <!-- Razorpay Java SDK: create orders, verify payments, initiate payouts -->
+        <dependency>
+            <groupId>com.razorpay</groupId>
+            <artifactId>razorpay-java</artifactId>
+            <version>1.4.5</version>
+        </dependency>
+        <!-- Stripe Java SDK: payment intents, webhooks, connect transfers -->
+        <dependency>
+            <groupId>com.stripe</groupId>
+            <artifactId>stripe-java</artifactId>
+            <version>26.2.0</version>
+        </dependency>
+
         <!-- ── TESTING ── -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

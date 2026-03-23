@@ -28,7 +28,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     @Query("""
             SELECT COUNT(b) > 0 FROM Booking b
             WHERE b.truck.id = :truckId
-              AND b.status IN ('PENDING', 'CONFIRMED', 'ACTIVE')
+              AND b.status IN ('PENDING', 'AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE')
               AND b.startDate <= :endDate
               AND b.endDate >= :startDate
             """)
@@ -44,7 +44,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             SELECT COUNT(b) > 0 FROM Booking b
             WHERE b.truck.id = :truckId
               AND b.id != :excludeBookingId
-              AND b.status IN ('PENDING', 'CONFIRMED', 'ACTIVE')
+              AND b.status IN ('PENDING', 'AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE')
               AND b.startDate <= :endDate
               AND b.endDate >= :startDate
             """)
@@ -62,7 +62,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     @Query("""
             SELECT b FROM Booking b
             WHERE b.truck.id IN :truckIds
-              AND b.status IN ('CONFIRMED', 'ACTIVE')
+              AND b.status IN ('AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE')
               AND b.endDate >= CURRENT_DATE
             """)
     List<Booking> findCurrentOrUpcomingBookingsByTruckIds(@Param("truckIds") List<UUID> truckIds);
@@ -75,7 +75,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     @Query("""
             SELECT b FROM Booking b
             WHERE b.truck.id = :truckId
-              AND b.status IN ('PENDING', 'CONFIRMED', 'ACTIVE')
+              AND b.status IN ('PENDING', 'AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE')
               AND b.endDate >= CURRENT_DATE
             ORDER BY b.startDate ASC
             """)

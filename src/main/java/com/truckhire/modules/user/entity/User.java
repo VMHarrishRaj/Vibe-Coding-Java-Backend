@@ -106,4 +106,15 @@ public class User extends BaseAuditEntity {
 
     @Column(name = "bank_name", length = 255)
     private String bankName;
+
+    // ── Payment Gateway IDs (for owner payouts) ──
+
+    @Column(name = "razorpay_contact_id", length = 255)
+    private String razorpayContactId;
+
+    @Column(name = "razorpay_fund_account_id", length = 255)
+    private String razorpayFundAccountId;
+
+    @Column(name = "stripe_account_id", length = 255)
+    private String stripeAccountId;
 }

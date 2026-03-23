@@ -18,7 +18,7 @@ spring:
   # Active profile: controls which application-{profile}.yml is loaded
   # Override with: SPRING_PROFILES_ACTIVE=prod (env variable)
   profiles:
-    active: dev
+    active: local
 
   # ── JPA / Hibernate ──
   jpa:
@@ -102,4 +102,14 @@ app:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
   base-url: ${APP_BASE_URL:http://localhost:8080}
   file-storage:
-    upload-dir: ./uploads
+    upload-dir: ${FILE_UPLOAD_DIR:./uploads}
+  payment:
+    razorpay:
+      key-id: ${RAZORPAY_KEY_ID:}
+      key-secret: ${RAZORPAY_KEY_SECRET:}
+      webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:}
+      account-number: ${RAZORPAY_ACCOUNT_NUMBER:}
+    stripe:
+      secret-key: ${STRIPE_SECRET_KEY:}
+      publishable-key: ${STRIPE_PUBLISHABLE_KEY:}
+      webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
