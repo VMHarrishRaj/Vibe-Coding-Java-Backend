@@ -1,14 +1,18 @@
 package com.truckhire.modules.payment.controller;
 
 import com.truckhire.common.dto.ApiResponse;
+import com.truckhire.common.dto.PagedResponse;
 import com.truckhire.common.util.SecurityUtils;
 import com.truckhire.modules.payment.dto.LinkBankAccountRequest;
+import com.truckhire.modules.payment.dto.MyPaymentHistoryResponse;
 import com.truckhire.modules.payment.dto.PaymentInitiatedResponse;
 import com.truckhire.modules.payment.dto.PaymentStatusResponse;
 import com.truckhire.modules.payment.dto.VerifyPaymentRequest;
 import com.truckhire.modules.payment.service.PaymentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -97,6 +101,21 @@ public class PaymentController {
                 request.getRazorpaySignature()
         );
         return ResponseEntity.ok(ApiResponse.success("Mileage payment verified. Payout initiated.", null));
+    }
+
+    /**
+     * Payment history for the current user.
+     * RENTER: returns their CHARGE + REFUND transactions (what they paid / got refunded).
+     * OWNER:  returns their PAYOUT transactions (earnings received per booking).
+     * Role is resolved from the JWT automatically.
+     */
+    @GetMapping("/payments/mine")
+    @PreAuthorize("hasAnyRole('RENTER', 'OWNER')")
+    public ResponseEntity<ApiResponse<PagedResponse<MyPaymentHistoryResponse>>> getMyPayments(
+            @PageableDefault(size = 50) Pageable pageable) {
+        var currentUser = SecurityUtils.getCurrentUser();
+        PagedResponse<MyPaymentHistoryResponse> response = paymentService.getMyPayments(currentUser, pageable);
+        return ResponseEntity.ok(ApiResponse.success("Payment history retrieved", response));
     }
 
     /**

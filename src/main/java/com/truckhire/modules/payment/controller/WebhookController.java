@@ -122,7 +122,14 @@ public class WebhookController {
         if ("payment_intent.succeeded".equals(event.getType())) {
             String paymentIntentId = extractPaymentIntentId(event);
             if (paymentIntentId != null) {
-                paymentService.handleStripeWebhook(paymentIntentId);
+                try {
+                    paymentService.handleStripeWebhook(paymentIntentId);
+                } catch (Exception e) {
+                    // Log but still return 200 — Stripe retries on any non-2xx response,
+                    // which would cause duplicate processing. Log the error for investigation.
+                    log.error("Stripe webhook: error processing payment_intent.succeeded for piId={}: {}",
+                            paymentIntentId, e.getMessage(), e);
+                }
             } else {
                 log.error("Stripe webhook: could not extract PaymentIntent ID from event {}", event.getId());
             }

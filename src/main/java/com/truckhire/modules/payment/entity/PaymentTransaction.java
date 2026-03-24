@@ -92,4 +92,15 @@ public class PaymentTransaction extends BaseAuditEntity {
 
     @Column(name = "failure_reason", columnDefinition = "TEXT")
     private String failureReason;
+
+    // Sequential invoice number — INV001, INV002 — generated at transaction creation
+    @Column(name = "invoice_number", length = 20, unique = true)
+    private String invoiceNumber;
+
+    // Card details — populated from Stripe webhook payload
+    @Column(name = "card_last4", length = 4)
+    private String cardLast4;
+
+    @Column(name = "payment_method", length = 50)
+    private String paymentMethod;
 }

@@ -103,6 +103,9 @@ public class PaymentService {
         GatewayPort adapter = selectAdapter(gateway);
         String gatewayOrderId = adapter.createOrder(amount, currency, booking.getBookingNumber());
 
+        long invoiceSeq = transactionRepository.nextInvoiceSequence();
+        String invoiceNumber = String.format("INV%03d", invoiceSeq);
+
         PaymentTransaction txn = PaymentTransaction.builder()
                 .booking(booking)
                 .gateway(gateway)
@@ -111,10 +114,11 @@ public class PaymentService {
                 .currency(currency)
                 .status(PaymentStatus.PENDING)
                 .type(PaymentType.CHARGE)
+                .invoiceNumber(invoiceNumber)
                 .build();
         transactionRepository.save(txn);
 
-        log.info("Payment initiated: bookingId={}, gateway={}, orderId={}", bookingId, gateway, gatewayOrderId);
+        log.info("Payment initiated: bookingId={}, gateway={}, orderId={}, invoiceNumber={}", bookingId, gateway, gatewayOrderId, invoiceNumber);
         return buildInitiatedResponse(txn, booking);
     }
 
@@ -564,6 +568,178 @@ public class PaymentService {
                 log.info("Payment captured — booking awaiting owner approval: bookingId={}", bookingId);
             }
         });
+    }
+
+    // ═══════════════════════════════════════
+    // ADMIN PAYMENTS LIST + DETAIL
+    // ═══════════════════════════════════════
+
+    @Transactional(readOnly = true)
+    public com.truckhire.common.dto.PagedResponse<com.truckhire.modules.payment.dto.AdminPaymentListResponse>
+            getAdminPayments(String search, org.springframework.data.domain.Pageable pageable) {
+
+        org.springframework.data.domain.Page<PaymentTransaction> page;
+        if (search != null && !search.isBlank()) {
+            String q = "%" + search.toLowerCase().trim() + "%";
+            page = transactionRepository.searchChargesWithDetails(q, pageable);
+        } else {
+            page = transactionRepository.findAllChargesWithDetails(pageable);
+        }
+
+        java.util.List<com.truckhire.modules.payment.dto.AdminPaymentListResponse> content =
+                page.getContent().stream()
+                        .map(this::mapToAdminPaymentListResponse)
+                        .collect(java.util.stream.Collectors.toList());
+
+        return com.truckhire.common.dto.PagedResponse.<com.truckhire.modules.payment.dto.AdminPaymentListResponse>builder()
+                .content(content)
+                .pageNumber(page.getNumber())
+                .pageSize(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .last(page.isLast())
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse getAdminInvoiceDetail(UUID transactionId) {
+        PaymentTransaction txn = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new com.truckhire.common.exception.ResourceNotFoundException(
+                        "PaymentTransaction", "id", transactionId));
+
+        if (txn.getType() != PaymentType.CHARGE) {
+            throw new com.truckhire.common.exception.BusinessException(
+                    "INVALID_TRANSACTION_TYPE", "Invoice detail is only available for CHARGE transactions.");
+        }
+
+        com.truckhire.modules.booking.entity.Booking booking = txn.getBooking();
+        com.truckhire.modules.truck.entity.Truck truck = booking.getTruck();
+        User renter = booking.getRenter();
+
+        PlatformSettings settings = platformSettingsService.getSettings();
+
+        return com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.builder()
+                .id(txn.getId().toString())
+                .invoiceNumber(txn.getInvoiceNumber())
+                .bookingNumber(booking.getBookingNumber())
+                .paymentDate(txn.getCreatedAt() != null ? txn.getCreatedAt().toString() : null)
+                .gateway(txn.getGateway().name())
+                .paymentStatus(txn.getStatus().name())
+                .settlementStatus(resolveSettlementStatus(txn))
+                .total(txn.getAmount())
+                .ownerShare(txn.getOwnerAmount())
+                .platformShare(txn.getPlatformFee())
+                .ownerSharePercent(txn.getPlatformFee() != null
+                        ? java.math.BigDecimal.valueOf(100).subtract(settings.getPlatformFeePercent())
+                        : null)
+                .platformFeePercent(settings.getPlatformFeePercent())
+                .transactionId(txn.getGatewayPaymentId())
+                .paymentMethod(txn.getPaymentMethod())
+                .cardLast4(txn.getCardLast4())
+                .booking(com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.BookingDetail.builder()
+                        .id(booking.getId().toString())
+                        .startDate(booking.getStartDate().toString())
+                        .endDate(booking.getEndDate().toString())
+                        .pickupLocation(booking.getPickupLocation())
+                        .dropoffLocation(booking.getDropoffLocation())
+                        .insuranceCost(booking.getInsuranceCost())
+                        .additionalServicesCost(booking.getAdditionalServicesCost())
+                        .tax(booking.getTax())
+                        .renter(com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.RenterInfo.builder()
+                                .fullname(renter.getFullname())
+                                .email(renter.getEmail())
+                                .phone(renter.getPhone())
+                                .build())
+                        .truck(com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.TruckInfo.builder()
+                                .model(truck.getModel())
+                                .pricePerDay(booking.getPricePerDay())
+                                .registrationNumber(truck.getRegistrationNumber())
+                                .locationCity(truck.getLocationCity())
+                                .build())
+                        .build())
+                .build();
+    }
+
+    private com.truckhire.modules.payment.dto.AdminPaymentListResponse mapToAdminPaymentListResponse(
+            PaymentTransaction txn) {
+        com.truckhire.modules.booking.entity.Booking booking = txn.getBooking();
+        return com.truckhire.modules.payment.dto.AdminPaymentListResponse.builder()
+                .id(txn.getId().toString())
+                .invoiceNumber(txn.getInvoiceNumber())
+                .bookingNumber(booking.getBookingNumber())
+                .renterName(booking.getRenter().getFullname())
+                .paymentDate(txn.getCreatedAt() != null ? txn.getCreatedAt().toString() : null)
+                .total(txn.getAmount())
+                .ownerShare(txn.getOwnerAmount())
+                .platformShare(txn.getPlatformFee())
+                .paymentStatus(txn.getStatus().name())
+                .settlementStatus(resolveSettlementStatus(txn))
+                .build();
+    }
+
+    private String resolveSettlementStatus(PaymentTransaction txn) {
+        // Check if there's a payout transaction for this booking
+        Optional<PaymentTransaction> payout = transactionRepository
+                .findFirstByBookingIdAndTypeOrderByCreatedAtDesc(txn.getBooking().getId(), PaymentType.PAYOUT);
+        if (payout.isEmpty()) return "PENDING";
+        return payout.get().getStatus() == PaymentStatus.PAID_OUT ? "SETTLED" : "PAYOUT_PENDING";
+    }
+
+    // ═══════════════════════════════════════
+    // MY PAYMENT HISTORY (RENTER + OWNER)
+    // ═══════════════════════════════════════
+
+    /**
+     * Returns payment history for the current user.
+     * - RENTER: their outgoing CHARGE + REFUND transactions
+     * - OWNER:  their incoming PAYOUT transactions
+     * Role is detected from the User entity passed in — no branching on JWT in service layer.
+     */
+    @Transactional(readOnly = true)
+    public com.truckhire.common.dto.PagedResponse<com.truckhire.modules.payment.dto.MyPaymentHistoryResponse>
+            getMyPayments(User currentUser, org.springframework.data.domain.Pageable pageable) {
+
+        org.springframework.data.domain.Page<PaymentTransaction> page;
+        String roleName = currentUser.getRole().getName();
+
+        if ("OWNER".equals(roleName)) {
+            page = transactionRepository.findOwnerPayoutHistory(currentUser.getId(), pageable);
+        } else {
+            // RENTER (and fallback for any other role)
+            page = transactionRepository.findRenterPaymentHistory(currentUser.getId(), pageable);
+        }
+
+        java.util.List<com.truckhire.modules.payment.dto.MyPaymentHistoryResponse> content =
+                page.getContent().stream()
+                        .map(this::mapToMyPaymentHistoryResponse)
+                        .collect(java.util.stream.Collectors.toList());
+
+        return com.truckhire.common.dto.PagedResponse.<com.truckhire.modules.payment.dto.MyPaymentHistoryResponse>builder()
+                .content(content)
+                .pageNumber(page.getNumber())
+                .pageSize(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .last(page.isLast())
+                .build();
+    }
+
+    private com.truckhire.modules.payment.dto.MyPaymentHistoryResponse mapToMyPaymentHistoryResponse(
+            PaymentTransaction txn) {
+        com.truckhire.modules.booking.entity.Booking booking = txn.getBooking();
+        com.truckhire.modules.truck.entity.Truck truck = booking.getTruck();
+        return com.truckhire.modules.payment.dto.MyPaymentHistoryResponse.builder()
+                .id(txn.getId().toString())
+                .bookingId(booking.getId().toString())
+                .bookingNumber(booking.getBookingNumber())
+                .truckModel(truck != null ? truck.getModel() : null)
+                .amount(txn.getAmount())
+                .status(txn.getStatus().name())
+                .type(txn.getType().name())
+                .gateway(txn.getGateway().name())
+                .currency(txn.getCurrency())
+                .createdAt(txn.getCreatedAt() != null ? txn.getCreatedAt().toString() : null)
+                .build();
     }
 
     private String resolveOwnerGatewayId(User owner, PaymentGateway gateway) {
