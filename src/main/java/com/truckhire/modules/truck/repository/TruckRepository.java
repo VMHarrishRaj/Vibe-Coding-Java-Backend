@@ -103,7 +103,7 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
               AND (:minCapacity IS NULL OR t.capacityTons >= :minCapacity)
               AND t.id NOT IN (
                   SELECT b.truck.id FROM Booking b
-                  WHERE b.status IN ('PENDING', 'CONFIRMED', 'ACTIVE')
+                  WHERE b.status IN ('PENDING', 'AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE')
                     AND b.startDate <= :availableTo
                     AND b.endDate >= :availableFrom
               )
