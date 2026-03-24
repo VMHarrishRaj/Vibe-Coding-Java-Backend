@@ -36,8 +36,9 @@ public class AdminDashboardService {
         // ── Booking Status widget ──
         long ongoingBookings = bookingRepository.countByStatusAndDeletedAtIsNull(BookingStatus.ACTIVE);
         long completedBookings = bookingRepository.countByStatusAndDeletedAtIsNull(BookingStatus.COMPLETED);
-        // Upcoming = PENDING (awaiting owner) + CONFIRMED (accepted, not yet started)
+        // Upcoming = PENDING + AWAITING_APPROVAL (payment captured, owner deciding) + CONFIRMED (accepted, not yet started)
         long upcomingBookings = bookingRepository.countByStatusAndDeletedAtIsNull(BookingStatus.PENDING)
+                + bookingRepository.countByStatusAndDeletedAtIsNull(BookingStatus.AWAITING_APPROVAL)
                 + bookingRepository.countByStatusAndDeletedAtIsNull(BookingStatus.CONFIRMED);
         long rejectedBookings = bookingRepository.countByStatusAndDeletedAtIsNull(BookingStatus.REJECTED);
 

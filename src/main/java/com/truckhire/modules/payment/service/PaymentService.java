@@ -277,8 +277,8 @@ public class PaymentService {
      * - ownerAmount = totalAmount - platformFee
      *
      * Then initiates a transfer to the owner's linked gateway account.
-     * If the owner has no gateway account linked, logs a warning and skips
-     * (booking still completes — payout can be retried manually).
+     * If the owner has no gateway account linked, records a PAYOUT_PENDING transaction
+     * so the admin can see the pending payout and retry it via POST /admin/bookings/{id}/payout.
      */
     @Transactional
     public void initiateOwnerPayout(UUID bookingId) {
@@ -323,8 +323,19 @@ public class PaymentService {
         // Determine owner's gateway account ID
         String ownerGatewayId = resolveOwnerGatewayId(owner, charge.getGateway());
         if (ownerGatewayId == null) {
-            log.warn("Owner {} has no {} account linked — payout skipped. Booking {} is still COMPLETED.",
+            log.warn("Owner {} has no {} account linked — recording PAYOUT_PENDING. Booking {} is still COMPLETED.",
                     owner.getId(), charge.getGateway(), bookingId);
+            PaymentTransaction pendingTxn = PaymentTransaction.builder()
+                    .booking(booking)
+                    .gateway(charge.getGateway())
+                    .amount(ownerAmount)
+                    .platformFee(platformFee)
+                    .ownerAmount(ownerAmount)
+                    .currency(charge.getCurrency())
+                    .status(PaymentStatus.PAYOUT_PENDING)
+                    .type(PaymentType.PAYOUT)
+                    .build();
+            transactionRepository.save(pendingTxn);
             return;
         }
 

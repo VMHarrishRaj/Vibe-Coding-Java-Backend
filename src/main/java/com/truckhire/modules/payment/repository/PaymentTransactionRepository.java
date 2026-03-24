@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -86,4 +87,15 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     org.springframework.data.domain.Page<PaymentTransaction> findOwnerPayoutHistory(
             @Param("userId") java.util.UUID userId,
             org.springframework.data.domain.Pageable pageable);
+
+    // Owner dashboard: net earnings = sum of owner_amount from PAYOUT transactions (PAID_OUT or PAYOUT_PENDING)
+    // Includes PAYOUT_PENDING so bookings where the owner has no linked account still count (money is owed to them)
+    @Query("""
+            SELECT COALESCE(SUM(pt.ownerAmount), 0)
+            FROM PaymentTransaction pt
+            WHERE pt.booking.owner.id = :ownerId
+              AND pt.type = 'PAYOUT'
+              AND pt.status IN ('PAID_OUT', 'PAYOUT_PENDING')
+            """)
+    BigDecimal sumOwnerEarnings(@Param("ownerId") UUID ownerId);
 }

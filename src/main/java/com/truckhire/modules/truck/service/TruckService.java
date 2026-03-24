@@ -11,6 +11,7 @@ import com.truckhire.modules.owner.dto.OwnerDashboardResponse;
 import com.truckhire.modules.truck.dto.*;
 import com.truckhire.modules.truck.entity.*;
 import com.truckhire.modules.truck.repository.*;
+import com.truckhire.modules.payment.repository.PaymentTransactionRepository;
 import com.truckhire.modules.user.entity.DocumentType;
 import com.truckhire.modules.user.entity.Role;
 import com.truckhire.modules.user.entity.User;
@@ -64,6 +65,7 @@ public class TruckService {
     private final UserRepository userRepository;
     private final FileStorageService fileStorageService;
     private final BookingRepository bookingRepository;
+    private final PaymentTransactionRepository transactionRepository;
 
     // ═══════════════════════════════════════
     // OWNER OPERATIONS
@@ -274,7 +276,7 @@ public class TruckService {
         }
 
         long pendingBookings = bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.PENDING);
-        BigDecimal totalEarnings = bookingRepository.sumTotalAmountByOwnerIdAndCompleted(ownerId);
+        BigDecimal totalEarnings = transactionRepository.sumOwnerEarnings(ownerId);
 
         return OwnerDashboardResponse.builder()
                 .totalTrucks(approved + pending + rejected + inactive)
