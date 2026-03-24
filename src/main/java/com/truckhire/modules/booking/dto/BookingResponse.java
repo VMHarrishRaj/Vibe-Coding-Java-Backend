@@ -46,8 +46,14 @@ public class BookingResponse {
     private BigDecimal pricePerDay;
     private BigDecimal dayAmount;
     private BigDecimal costPerMile;
-    private BigDecimal mileageAmount;   // null until return
-    private BigDecimal totalAmount;     // null until COMPLETED
+    private BigDecimal mileageAmount;           // null until return
+    private BigDecimal totalAmount;             // null until COMPLETED
+    private BigDecimal insuranceCost;           // null until future phase
+    private BigDecimal additionalServicesCost;  // null until future phase
+    private BigDecimal tax;                     // null until future phase
+
+    // Derived flag — true when status=ACTIVE and endDate < today
+    private Boolean isOverdue;
 
     // Timestamps
     private String handedOffAt;
@@ -86,6 +92,11 @@ public class BookingResponse {
         private String locationCity;
         private String coverPhotoUrl;
         private Integer currentMileage;
+        private Integer capacityTons;
+        private Integer year;
+        private String color;
+        private String fuelType;    // PETROL / DIESEL / ELECTRIC / HYBRID — null for existing trucks
+        private String vinNumber;
     }
 
     @Data

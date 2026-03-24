@@ -417,22 +417,33 @@ public class BookingService {
 
     /**
      * Admin: paginated list of all bookings, optional status filter.
+     * Accepts a list of statuses so the "Upcoming" tab can filter on
+     * CONFIRMED + AWAITING_APPROVAL simultaneously.
      */
     @Transactional(readOnly = true)
-    public PagedResponse<BookingListResponse> getAllBookings(String statusFilter, String q, Pageable pageable) {
-        BookingStatus status = parseStatusFilter(statusFilter);
+    public PagedResponse<BookingListResponse> getAllBookings(List<String> statusFilters, String q, Pageable pageable) {
+        List<BookingStatus> statuses = parseStatusFilters(statusFilters);
         boolean hasQ = q != null && !q.isBlank();
         Page<Booking> page;
 
         if (hasQ) {
             String keyword = "%" + q.toLowerCase().trim() + "%";
-            page = (status == null)
-                    ? bookingRepository.searchByKeyword(keyword, pageable)
-                    : bookingRepository.searchByKeywordAndStatus(keyword, status, pageable);
+            if (statuses.isEmpty()) {
+                page = bookingRepository.searchByKeyword(keyword, pageable);
+            } else if (statuses.size() == 1) {
+                page = bookingRepository.searchByKeywordAndStatus(keyword, statuses.get(0), pageable);
+            } else {
+                // Multi-status search not yet implemented — fall back to keyword-only
+                page = bookingRepository.searchByKeyword(keyword, pageable);
+            }
         } else {
-            page = (status == null)
-                    ? bookingRepository.findAllWithDetails(pageable)
-                    : bookingRepository.findAllWithDetailsByStatus(status, pageable);
+            if (statuses.isEmpty()) {
+                page = bookingRepository.findAllWithDetails(pageable);
+            } else if (statuses.size() == 1) {
+                page = bookingRepository.findAllWithDetailsByStatus(statuses.get(0), pageable);
+            } else {
+                page = bookingRepository.findAllWithDetailsByStatuses(statuses, pageable);
+            }
         }
 
         return buildListPagedResponse(page);
@@ -540,10 +551,19 @@ public class BookingService {
         try {
             return BookingStatus.valueOf(statusFilter.toUpperCase());
         } catch (IllegalArgumentException e) {
-            // Unrecognized status — treat as no filter rather than erroring.
-            // Filtering with no matching data should return an empty list, not 409.
             return null;
         }
+    }
+
+    private List<BookingStatus> parseStatusFilters(List<String> statusFilters) {
+        if (statusFilters == null || statusFilters.isEmpty()) return List.of();
+        return statusFilters.stream()
+                .map(s -> {
+                    try { return BookingStatus.valueOf(s.toUpperCase()); }
+                    catch (IllegalArgumentException e) { return null; }
+                })
+                .filter(s -> s != null)
+                .collect(Collectors.toList());
     }
 
     private BookingResponse mapToFullResponse(Booking booking) {
@@ -581,6 +601,11 @@ public class BookingService {
                         .locationCity(truck.getLocationCity())
                         .coverPhotoUrl(coverPhotoUrl)
                         .currentMileage(truck.getMileageTotal())
+                        .capacityTons(truck.getCapacityTons())
+                        .year(truck.getYear())
+                        .color(truck.getColor())
+                        .fuelType(truck.getFuelType() != null ? truck.getFuelType().name() : null)
+                        .vinNumber(truck.getVinNumber())
                         .build())
                 .startDate(booking.getStartDate().toString())
                 .endDate(booking.getEndDate().toString())
@@ -595,6 +620,11 @@ public class BookingService {
                 .costPerMile(booking.getCostPerMile())
                 .mileageAmount(booking.getMileageAmount())
                 .totalAmount(booking.getTotalAmount())
+                .insuranceCost(booking.getInsuranceCost())
+                .additionalServicesCost(booking.getAdditionalServicesCost())
+                .tax(booking.getTax())
+                .isOverdue(booking.getStatus() == BookingStatus.ACTIVE
+                        && booking.getEndDate().isBefore(java.time.LocalDate.now()))
                 .handedOffAt(booking.getHandedOffAt() != null ? booking.getHandedOffAt().toString() : null)
                 .returnedAt(booking.getReturnedAt() != null ? booking.getReturnedAt().toString() : null)
                 .cancelledAt(booking.getCancelledAt() != null ? booking.getCancelledAt().toString() : null)
@@ -627,6 +657,8 @@ public class BookingService {
                 .totalAmount(booking.getTotalAmount())
                 .status(booking.getStatus().name())
                 .createdAt(booking.getCreatedAt() != null ? booking.getCreatedAt().toString() : null)
+                .isOverdue(booking.getStatus() == BookingStatus.ACTIVE
+                        && booking.getEndDate().isBefore(java.time.LocalDate.now()))
                 .build();
     }
 

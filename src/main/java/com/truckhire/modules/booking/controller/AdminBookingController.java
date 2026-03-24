@@ -15,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -34,7 +35,7 @@ public class AdminBookingController {
      */
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<BookingListResponse>>> getAllBookings(
-            @RequestParam(required = false) String status,
+            @RequestParam(required = false) List<String> status,
             @RequestParam(name = "search", required = false) String q,
             @PageableDefault(size = 20) Pageable pageable) {
         PagedResponse<BookingListResponse> response = bookingService.getAllBookings(status, q, pageable);

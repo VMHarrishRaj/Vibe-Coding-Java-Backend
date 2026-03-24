@@ -86,4 +86,17 @@ public class Truck extends BaseAuditEntity {
 
     @Column(name = "rejection_reason", columnDefinition = "TEXT")
     private String rejectionReason;
+
+    @Column(name = "year")
+    private Integer year;
+
+    @Column(name = "color", length = 100)
+    private String color;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fuel_type", length = 20)
+    private FuelType fuelType;
+
+    @Column(name = "vin_number", length = 17)
+    private String vinNumber;
 }
