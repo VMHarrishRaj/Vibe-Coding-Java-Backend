@@ -9,6 +9,7 @@ import com.truckhire.modules.booking.entity.BookingStatus;
 import com.truckhire.modules.booking.entity.BookingStatusHistory;
 import com.truckhire.modules.booking.repository.BookingRepository;
 import com.truckhire.modules.booking.repository.BookingStatusHistoryRepository;
+import com.truckhire.modules.payment.service.PaymentService;
 import com.truckhire.modules.truck.entity.Truck;
 import com.truckhire.modules.truck.entity.TruckStatus;
 import com.truckhire.modules.truck.repository.TruckDocumentRepository;
@@ -19,6 +20,7 @@ import com.truckhire.modules.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -48,7 +50,6 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class BookingService {
 
     @Value("${app.base-url}")
@@ -59,6 +60,22 @@ public class BookingService {
     private final TruckRepository truckRepository;
     private final TruckDocumentRepository truckDocumentRepository;
     private final UserRepository userRepository;
+    private final PaymentService paymentService;
+
+    public BookingService(
+            BookingRepository bookingRepository,
+            BookingStatusHistoryRepository historyRepository,
+            TruckRepository truckRepository,
+            TruckDocumentRepository truckDocumentRepository,
+            UserRepository userRepository,
+            @Lazy PaymentService paymentService) {
+        this.bookingRepository = bookingRepository;
+        this.historyRepository = historyRepository;
+        this.truckRepository = truckRepository;
+        this.truckDocumentRepository = truckDocumentRepository;
+        this.userRepository = userRepository;
+        this.paymentService = paymentService;
+    }
 
     // ═══════════════════════════════════════
     // RENTER OPERATIONS
@@ -164,13 +181,17 @@ public class BookingService {
                     "You are not the renter for this booking");
         }
 
-        if (booking.getStatus() == BookingStatus.ACTIVE ||
+        if (booking.getStatus() == BookingStatus.CONFIRMED ||
+                booking.getStatus() == BookingStatus.ACTIVE ||
                 booking.getStatus() == BookingStatus.COMPLETED ||
                 booking.getStatus() == BookingStatus.REJECTED ||
                 booking.getStatus() == BookingStatus.CANCELLED) {
             throw new BusinessException("CANNOT_CANCEL",
                     "Booking cannot be cancelled in status: " + booking.getStatus());
         }
+
+        // Refund if payment was already captured (e.g. cancelling from AWAITING_APPROVAL)
+        paymentService.refundIfPaid(bookingId);
 
         User renter = booking.getRenter();
         booking.setStatus(BookingStatus.CANCELLED);
@@ -189,50 +210,61 @@ public class BookingService {
     // ═══════════════════════════════════════
 
     /**
-     * Owner confirms (accepts) a PENDING booking.
+     * Owner approves a booking that the renter has already paid for (AWAITING_APPROVAL → CONFIRMED).
+     *
+     * The renter pays first to demonstrate intent. Once payment is captured, the booking moves to
+     * AWAITING_APPROVAL. The owner then decides to approve or reject.
+     * If approved: booking proceeds to CONFIRMED → ACTIVE → COMPLETED.
+     * If rejected: booking is REJECTED and the renter's payment is refunded.
      */
     @Transactional
     public BookingResponse confirmBooking(UUID ownerId, UUID bookingId) {
         Booking booking = loadBookingWithDetails(bookingId);
         verifyOwner(booking, ownerId);
 
-        if (booking.getStatus() != BookingStatus.PENDING) {
+        if (booking.getStatus() != BookingStatus.AWAITING_APPROVAL) {
             throw new BusinessException("INVALID_STATUS_TRANSITION",
-                    "Can only confirm PENDING bookings. Current status: " + booking.getStatus());
+                    "Can only approve bookings in AWAITING_APPROVAL status. Current status: " + booking.getStatus());
         }
 
         booking.setStatus(BookingStatus.CONFIRMED);
         Booking saved = bookingRepository.save(booking);
         recordHistory(saved, BookingStatus.CONFIRMED, booking.getOwner(), null);
 
-        log.info("Booking confirmed: id={}, owner={}", bookingId, ownerId);
+        log.info("Booking approved by owner: id={}, owner={}", bookingId, ownerId);
         return mapToFullResponse(saved);
     }
 
     /**
-     * Owner rejects a PENDING booking.
+     * Owner rejects a booking in AWAITING_APPROVAL status.
+     * The renter has already paid — refund is issued automatically.
      */
     @Transactional
     public BookingResponse rejectBooking(UUID ownerId, UUID bookingId, String reason) {
         Booking booking = loadBookingWithDetails(bookingId);
         verifyOwner(booking, ownerId);
 
-        if (booking.getStatus() != BookingStatus.PENDING) {
+        if (booking.getStatus() != BookingStatus.AWAITING_APPROVAL) {
             throw new BusinessException("INVALID_STATUS_TRANSITION",
-                    "Can only reject PENDING bookings. Current status: " + booking.getStatus());
+                    "Can only reject bookings in AWAITING_APPROVAL status. Current status: " + booking.getStatus());
         }
+
+        // Renter already paid — refund the charge before rejecting
+        paymentService.refundIfPaid(bookingId);
 
         booking.setStatus(BookingStatus.REJECTED);
         booking.setOwnerNotes(reason);
+        booking.setCancelledAt(Instant.now());
         Booking saved = bookingRepository.save(booking);
         recordHistory(saved, BookingStatus.REJECTED, booking.getOwner(), reason);
 
-        log.info("Booking rejected: id={}, owner={}", bookingId, ownerId);
+        log.info("Booking rejected by owner (refund issued): id={}, owner={}", bookingId, ownerId);
         return mapToFullResponse(saved);
     }
 
     /**
-     * Owner cancels a booking they own (PENDING or CONFIRMED only).
+     * Owner cancels a booking they own (PENDING, AWAITING_APPROVAL, or CONFIRMED only).
+     * Refund is issued automatically if renter has already paid.
      */
     @Transactional
     public BookingResponse ownerCancelBooking(UUID ownerId, UUID bookingId, String reason) {
@@ -246,6 +278,9 @@ public class BookingService {
             throw new BusinessException("CANNOT_CANCEL",
                     "Booking cannot be cancelled in status: " + booking.getStatus());
         }
+
+        // Refund if payment was already captured
+        paymentService.refundIfPaid(bookingId);
 
         booking.setStatus(BookingStatus.CANCELLED);
         booking.setCancelledAt(Instant.now());
@@ -334,6 +369,12 @@ public class BookingService {
         Booking saved = bookingRepository.save(booking);
         recordHistory(saved, BookingStatus.COMPLETED, booking.getOwner(), request.getNotes());
 
+        // If there are mileage charges, create a top-up order for the renter to pay.
+        // Payout is admin-initiated via POST /admin/bookings/{id}/payout — not automatic.
+        if (mileageAmount.compareTo(BigDecimal.ZERO) > 0) {
+            paymentService.initiateMileageTopUp(bookingId);
+        }
+
         log.info("Booking completed: id={}, milesDriven={}, totalAmount={}", bookingId, milesDriven, totalAmount);
         return mapToFullResponse(saved);
     }
@@ -343,7 +384,8 @@ public class BookingService {
     // ═══════════════════════════════════════
 
     /**
-     * Admin cancels any PENDING or CONFIRMED booking.
+     * Admin cancels any PENDING, AWAITING_APPROVAL, or CONFIRMED booking.
+     * Refund is issued automatically if renter has already paid.
      */
     @Transactional
     public BookingResponse adminCancelBooking(UUID adminId, UUID bookingId, String reason) {
@@ -356,6 +398,9 @@ public class BookingService {
             throw new BusinessException("CANNOT_CANCEL",
                     "Booking cannot be cancelled in status: " + booking.getStatus());
         }
+
+        // Refund if payment was already captured (e.g. CONFIRMED booking)
+        paymentService.refundIfPaid(bookingId);
 
         User admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", adminId));
@@ -372,22 +417,33 @@ public class BookingService {
 
     /**
      * Admin: paginated list of all bookings, optional status filter.
+     * Accepts a list of statuses so the "Upcoming" tab can filter on
+     * CONFIRMED + AWAITING_APPROVAL simultaneously.
      */
     @Transactional(readOnly = true)
-    public PagedResponse<BookingListResponse> getAllBookings(String statusFilter, String q, Pageable pageable) {
-        BookingStatus status = parseStatusFilter(statusFilter);
+    public PagedResponse<BookingListResponse> getAllBookings(List<String> statusFilters, String q, Pageable pageable) {
+        List<BookingStatus> statuses = parseStatusFilters(statusFilters);
         boolean hasQ = q != null && !q.isBlank();
         Page<Booking> page;
 
         if (hasQ) {
             String keyword = "%" + q.toLowerCase().trim() + "%";
-            page = (status == null)
-                    ? bookingRepository.searchByKeyword(keyword, pageable)
-                    : bookingRepository.searchByKeywordAndStatus(keyword, status, pageable);
+            if (statuses.isEmpty()) {
+                page = bookingRepository.searchByKeyword(keyword, pageable);
+            } else if (statuses.size() == 1) {
+                page = bookingRepository.searchByKeywordAndStatus(keyword, statuses.get(0), pageable);
+            } else {
+                // Multi-status search not yet implemented — fall back to keyword-only
+                page = bookingRepository.searchByKeyword(keyword, pageable);
+            }
         } else {
-            page = (status == null)
-                    ? bookingRepository.findAllWithDetails(pageable)
-                    : bookingRepository.findAllWithDetailsByStatus(status, pageable);
+            if (statuses.isEmpty()) {
+                page = bookingRepository.findAllWithDetails(pageable);
+            } else if (statuses.size() == 1) {
+                page = bookingRepository.findAllWithDetailsByStatus(statuses.get(0), pageable);
+            } else {
+                page = bookingRepository.findAllWithDetailsByStatuses(statuses, pageable);
+            }
         }
 
         return buildListPagedResponse(page);
@@ -495,10 +551,19 @@ public class BookingService {
         try {
             return BookingStatus.valueOf(statusFilter.toUpperCase());
         } catch (IllegalArgumentException e) {
-            // Unrecognized status — treat as no filter rather than erroring.
-            // Filtering with no matching data should return an empty list, not 409.
             return null;
         }
+    }
+
+    private List<BookingStatus> parseStatusFilters(List<String> statusFilters) {
+        if (statusFilters == null || statusFilters.isEmpty()) return List.of();
+        return statusFilters.stream()
+                .map(s -> {
+                    try { return BookingStatus.valueOf(s.toUpperCase()); }
+                    catch (IllegalArgumentException e) { return null; }
+                })
+                .filter(s -> s != null)
+                .collect(Collectors.toList());
     }
 
     private BookingResponse mapToFullResponse(Booking booking) {
@@ -536,6 +601,11 @@ public class BookingService {
                         .locationCity(truck.getLocationCity())
                         .coverPhotoUrl(coverPhotoUrl)
                         .currentMileage(truck.getMileageTotal())
+                        .capacityTons(truck.getCapacityTons())
+                        .year(truck.getYear())
+                        .color(truck.getColor())
+                        .fuelType(truck.getFuelType() != null ? truck.getFuelType().name() : null)
+                        .vinNumber(truck.getVinNumber())
                         .build())
                 .startDate(booking.getStartDate().toString())
                 .endDate(booking.getEndDate().toString())
@@ -550,6 +620,11 @@ public class BookingService {
                 .costPerMile(booking.getCostPerMile())
                 .mileageAmount(booking.getMileageAmount())
                 .totalAmount(booking.getTotalAmount())
+                .insuranceCost(booking.getInsuranceCost())
+                .additionalServicesCost(booking.getAdditionalServicesCost())
+                .tax(booking.getTax())
+                .isOverdue(booking.getStatus() == BookingStatus.ACTIVE
+                        && booking.getEndDate().isBefore(java.time.LocalDate.now()))
                 .handedOffAt(booking.getHandedOffAt() != null ? booking.getHandedOffAt().toString() : null)
                 .returnedAt(booking.getReturnedAt() != null ? booking.getReturnedAt().toString() : null)
                 .cancelledAt(booking.getCancelledAt() != null ? booking.getCancelledAt().toString() : null)
@@ -582,6 +657,8 @@ public class BookingService {
                 .totalAmount(booking.getTotalAmount())
                 .status(booking.getStatus().name())
                 .createdAt(booking.getCreatedAt() != null ? booking.getCreatedAt().toString() : null)
+                .isOverdue(booking.getStatus() == BookingStatus.ACTIVE
+                        && booking.getEndDate().isBefore(java.time.LocalDate.now()))
                 .build();
     }
 

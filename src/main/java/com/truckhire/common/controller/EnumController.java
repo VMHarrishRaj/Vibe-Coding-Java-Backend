@@ -28,7 +28,7 @@ public class EnumController {
                 "truckStatuses",   List.of("PENDING_APPROVAL", "APPROVED", "REJECTED", "INACTIVE"),
                 "userStatuses",    List.of("ACTIVE", "SUSPENDED", "PENDING_VERIFICATION"),
                 "userRoles",       List.of("OWNER", "RENTER"),
-                "bookingStatuses", List.of("PENDING", "CONFIRMED", "ACTIVE", "COMPLETED", "REJECTED", "CANCELLED"),
+                "bookingStatuses", List.of("PENDING", "AWAITING_APPROVAL", "CONFIRMED", "ACTIVE", "COMPLETED", "REJECTED", "CANCELLED"),
                 "kycDocumentTypes",List.of("DRIVER_LICENSE", "PASSPORT", "STATE_ID"),
                 "truckSortOptions",List.of("price_asc", "price_desc", "newest"),
                 "bankAccountTypes",List.of("CHECKING", "SAVINGS")

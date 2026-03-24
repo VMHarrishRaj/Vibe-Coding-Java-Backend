@@ -100,6 +100,16 @@ public class Booking extends BaseAuditEntity {
     @Column(name = "dropoff_location", length = 500)
     private String dropoffLocation;
 
+    // Optional cost components — null until populated by future phases
+    @Column(name = "insurance_cost", precision = 12, scale = 2)
+    private BigDecimal insuranceCost;
+
+    @Column(name = "additional_services_cost", precision = 12, scale = 2)
+    private BigDecimal additionalServicesCost;
+
+    @Column(name = "tax", precision = 12, scale = 2)
+    private BigDecimal tax;
+
     @Column(name = "renter_notes", columnDefinition = "TEXT")
     private String renterNotes;
 

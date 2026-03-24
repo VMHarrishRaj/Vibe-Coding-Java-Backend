@@ -85,6 +85,15 @@ public class SecurityConfig {
                     // Enum values for frontend dropdowns (public)
                     .requestMatchers("/config/enums").permitAll()
 
+                    // Payment: webhook receivers (no JWT — gateway calls these)
+                    .requestMatchers("/payments/webhook/**").permitAll()
+
+                    // Payment: public config for frontend SDK initialization
+                    .requestMatchers("/config/payment").permitAll()
+
+                    // Public document type lookups (used by frontend before login to show KYC requirements)
+                    .requestMatchers("/users/document-types/**").permitAll()
+
                     // Truck availability APIs
                     .requestMatchers("/trucks/*/booked-dates").permitAll()
                     .requestMatchers("/trucks/*/availability").permitAll()

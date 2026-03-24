@@ -28,4 +28,5 @@ public class BookingListResponse {
     private BigDecimal totalAmount; // null until COMPLETED
     private String status;
     private String createdAt;
+    private Boolean isOverdue;  // true when status=ACTIVE and endDate < today
 }

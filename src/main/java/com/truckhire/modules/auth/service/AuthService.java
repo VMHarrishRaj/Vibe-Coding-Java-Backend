@@ -143,11 +143,11 @@ public class AuthService {
                 .orElseThrow(() -> new ResourceNotFoundException("Role", "name", original.getRole()));
 
         // ── Determine initial status ──
-        // Owners start as PENDING_VERIFICATION (need KYC)
-        // Renters start as ACTIVE
-        UserStatus initialStatus = Role.OWNER.equals(role.getName())
-                ? UserStatus.PENDING_VERIFICATION
-                : UserStatus.ACTIVE;
+        // Both OWNER and RENTER start as PENDING_VERIFICATION.
+        // Renters cannot book trucks until KYC is verified (BookingService guard),
+        // so their status must reflect that pending state accurately.
+        // Admin verifies KYC → sets kycVerified=true + status=ACTIVE for both roles.
+        UserStatus initialStatus = UserStatus.PENDING_VERIFICATION;
 
         // ── Build and save user ──
         User user = User.builder()
@@ -235,13 +235,13 @@ public class AuthService {
         }
 
         switch (user.getStatus()) {
-            case ACTIVE -> { /* proceed */ }
+            case ACTIVE, PENDING_VERIFICATION -> { /* proceed — PENDING_VERIFICATION users can log in but are
+                                                      restricted by role-specific guards (e.g. booking requires
+                                                      kycVerified=true, trucks require kycVerified=true) */ }
             case SUSPENDED -> throw new BusinessException("ACCOUNT_SUSPENDED",
                     "Your account has been suspended. Please contact support.");
             case REJECTED -> throw new BusinessException("ACCOUNT_REJECTED",
                     "Your account application was rejected. Please contact support for assistance.");
-            case PENDING_VERIFICATION -> throw new BusinessException("ACCOUNT_PENDING_VERIFICATION",
-                    "Your account is pending KYC verification. Please complete your verification to continue.");
             case PENDING -> throw new BusinessException("ACCOUNT_PENDING",
                     "Please verify your email address before logging in.");
             default -> throw new BusinessException("ACCOUNT_INACTIVE",

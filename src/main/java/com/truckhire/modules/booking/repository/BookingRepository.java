@@ -28,7 +28,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     @Query("""
             SELECT COUNT(b) > 0 FROM Booking b
             WHERE b.truck.id = :truckId
-              AND b.status IN ('PENDING', 'CONFIRMED', 'ACTIVE')
+              AND b.status IN ('PENDING', 'AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE')
               AND b.startDate <= :endDate
               AND b.endDate >= :startDate
             """)
@@ -44,7 +44,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             SELECT COUNT(b) > 0 FROM Booking b
             WHERE b.truck.id = :truckId
               AND b.id != :excludeBookingId
-              AND b.status IN ('PENDING', 'CONFIRMED', 'ACTIVE')
+              AND b.status IN ('PENDING', 'AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE')
               AND b.startDate <= :endDate
               AND b.endDate >= :startDate
             """)
@@ -62,7 +62,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     @Query("""
             SELECT b FROM Booking b
             WHERE b.truck.id IN :truckIds
-              AND b.status IN ('CONFIRMED', 'ACTIVE')
+              AND b.status IN ('AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE')
               AND b.endDate >= CURRENT_DATE
             """)
     List<Booking> findCurrentOrUpcomingBookingsByTruckIds(@Param("truckIds") List<UUID> truckIds);
@@ -75,7 +75,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     @Query("""
             SELECT b FROM Booking b
             WHERE b.truck.id = :truckId
-              AND b.status IN ('PENDING', 'CONFIRMED', 'ACTIVE')
+              AND b.status IN ('PENDING', 'AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE')
               AND b.endDate >= CURRENT_DATE
             ORDER BY b.startDate ASC
             """)
@@ -168,6 +168,22 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             ORDER BY month ASC
             """, nativeQuery = true)
     List<Object[]> sumRevenueGroupedByMonth();
+
+    /**
+     * Admin: all bookings filtered by a list of statuses (e.g. CONFIRMED + AWAITING_APPROVAL for "Upcoming" tab).
+     */
+    @Query(value = """
+            SELECT b FROM Booking b
+            JOIN FETCH b.truck JOIN FETCH b.renter JOIN FETCH b.owner
+            WHERE b.status IN :statuses
+            ORDER BY b.createdAt DESC
+            """,
+            countQuery = """
+            SELECT COUNT(b) FROM Booking b
+            JOIN b.truck JOIN b.renter JOIN b.owner
+            WHERE b.status IN :statuses
+            """)
+    Page<Booking> findAllWithDetailsByStatuses(@Param("statuses") List<BookingStatus> statuses, Pageable pageable);
 
     // Admin search — free-text across bookingNumber, renter name, truck model/make
     // :q must be pre-lowercased by the caller
