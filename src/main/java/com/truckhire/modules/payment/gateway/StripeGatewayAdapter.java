@@ -193,10 +193,9 @@ public class StripeGatewayAdapter implements GatewayPort {
                 addrBuilder.setPostalCode(owner.getZipcode());
                 hasAddress = true;
             }
-            if (owner.getCountry() != null && !owner.getCountry().isBlank()) {
-                addrBuilder.setCountry(owner.getCountry());
-                hasAddress = true;
-            }
+            // Country is intentionally NOT pre-filled — the DB stores full country names
+            // (e.g. "India", "United States") but Stripe requires ISO 3166-1 alpha-2 codes
+            // (e.g. "IN", "US"). The owner selects their country on Stripe's onboarding form.
             if (hasAddress) {
                 individualBuilder.setAddress(addrBuilder.build());
             }
