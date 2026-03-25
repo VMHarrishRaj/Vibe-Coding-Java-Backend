@@ -93,6 +93,9 @@ public class SecurityConfig {
                     // Payment: webhook receivers (no JWT — gateway calls these)
                     .requestMatchers("/payments/webhook/**").permitAll()
 
+                    // Stripe Connect return/refresh — Stripe drives these redirects, no JWT
+                    .requestMatchers("/stripe/connect/return", "/stripe/connect/refresh").permitAll()
+
                     // Payment: public config for frontend SDK initialization
                     .requestMatchers("/config/payment").permitAll()
 

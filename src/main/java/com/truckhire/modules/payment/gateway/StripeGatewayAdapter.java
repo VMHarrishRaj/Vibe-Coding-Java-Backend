@@ -2,7 +2,11 @@ package com.truckhire.modules.payment.gateway;
 
 import com.stripe.StripeClient;
 import com.stripe.exception.StripeException;
+import com.stripe.model.Account;
 import com.stripe.model.PaymentIntent;
+import com.stripe.model.AccountLink;
+import com.stripe.param.AccountCreateParams;
+import com.stripe.param.AccountLinkCreateParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.PaymentIntentRetrieveParams;
 import com.stripe.param.RefundCreateParams;
@@ -123,6 +127,76 @@ public class StripeGatewayAdapter implements GatewayPort {
             log.error("Stripe transfer failed: accountId={}, error={}", stripeAccountId, e.getMessage());
             throw new BusinessException("PAYOUT_GATEWAY_ERROR",
                     "Failed to initiate payout: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Create a Stripe Express Connected Account for an owner.
+     * Express accounts give owners a Stripe-hosted dashboard and handle KYC on Stripe's side.
+     * Returns the new Stripe account ID (acct_...).
+     */
+    public String createConnectedAccount(String email) {
+        try {
+            AccountCreateParams params = AccountCreateParams.builder()
+                    .setType(AccountCreateParams.Type.EXPRESS)
+                    .setEmail(email)
+                    .setCapabilities(AccountCreateParams.Capabilities.builder()
+                            .setTransfers(AccountCreateParams.Capabilities.Transfers.builder()
+                                    .setRequested(true)
+                                    .build())
+                            .build())
+                    .build();
+
+            Account account = client().accounts().create(params);
+            log.info("Stripe Connected Account created: accountId={}, email={}", account.getId(), email);
+            return account.getId();
+
+        } catch (StripeException e) {
+            log.error("Stripe createConnectedAccount failed: {}", e.getMessage());
+            throw new BusinessException("PAYMENT_GATEWAY_ERROR",
+                    "Failed to create Stripe Connected Account: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Generate a Stripe Account Link (onboarding URL) for the given Connected Account.
+     * The link expires after a short period — always generate fresh on each request.
+     *
+     * refreshUrl: where Stripe redirects if the link expires before completion.
+     * returnUrl:  where Stripe redirects after the owner completes (or abandons) onboarding.
+     */
+    public String createAccountLink(String stripeAccountId, String returnUrl, String refreshUrl) {
+        try {
+            AccountLinkCreateParams params = AccountLinkCreateParams.builder()
+                    .setAccount(stripeAccountId)
+                    .setType(AccountLinkCreateParams.Type.ACCOUNT_ONBOARDING)
+                    .setReturnUrl(returnUrl)
+                    .setRefreshUrl(refreshUrl)
+                    .build();
+
+            AccountLink link = client().accountLinks().create(params);
+            log.info("Stripe Account Link created: accountId={}, url={}", stripeAccountId, link.getUrl());
+            return link.getUrl();
+
+        } catch (StripeException e) {
+            log.error("Stripe createAccountLink failed: accountId={}, error={}", stripeAccountId, e.getMessage());
+            throw new BusinessException("PAYMENT_GATEWAY_ERROR",
+                    "Failed to create Stripe onboarding link: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Retrieve a Connected Account to verify onboarding completion status.
+     * chargesEnabled=true means the owner has completed Stripe's KYC and can receive transfers.
+     */
+    public boolean isAccountOnboardingComplete(String stripeAccountId) {
+        try {
+            Account account = client().accounts().retrieve(stripeAccountId);
+            return Boolean.TRUE.equals(account.getChargesEnabled());
+        } catch (StripeException e) {
+            log.error("Stripe account retrieve failed: accountId={}, error={}", stripeAccountId, e.getMessage());
+            throw new BusinessException("PAYMENT_GATEWAY_ERROR",
+                    "Failed to verify Stripe account status: " + e.getMessage());
         }
     }
 

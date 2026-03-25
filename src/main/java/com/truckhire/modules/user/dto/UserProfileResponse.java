@@ -61,6 +61,9 @@ public class UserProfileResponse {
     // ── Metadata ──
     private String createdAt; // ISO timestamp — "member since"
 
+    // ── Gateway connection status (OWNER only — false for ADMIN/RENTER) ──
+    private boolean stripeConnected;  // true when stripeAccountId is set on the user
+
     // ── OWNER role only — null for ADMIN/RENTER ──
     private List<OwnedVehicleSummary> vehiclesOwned;
 }

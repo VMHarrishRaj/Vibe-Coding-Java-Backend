@@ -16,7 +16,9 @@ import com.truckhire.modules.payment.enums.PaymentGateway;
 import com.truckhire.modules.payment.enums.PaymentStatus;
 import com.truckhire.modules.payment.enums.PaymentType;
 import com.truckhire.modules.payment.dto.LinkBankAccountRequest;
+import com.truckhire.modules.payment.dto.StripeConnectResponse;
 import com.truckhire.modules.payment.gateway.GatewayPort;
+import org.springframework.beans.factory.annotation.Value;
 import com.truckhire.modules.payment.gateway.RazorpayGatewayAdapter;
 import com.truckhire.modules.payment.gateway.StripeGatewayAdapter;
 import com.truckhire.modules.payment.repository.PaymentTransactionRepository;
@@ -61,6 +63,9 @@ public class PaymentService {
     private final PaymentConfig paymentConfig;
     private final RazorpayGatewayAdapter razorpayAdapter;
     private final StripeGatewayAdapter stripeAdapter;
+
+    @Value("${app.base-url}")
+    private String baseUrl;
 
     // ═══════════════════════════════════════
     // INITIATE PAYMENT
@@ -522,6 +527,71 @@ public class PaymentService {
 
         log.info("Owner bank account linked: ownerId={}, contactId={}, fundAccountId={}",
                 ownerId, contactId, fundAccountId);
+    }
+
+    // ═══════════════════════════════════════
+    // STRIPE CONNECT ONBOARDING
+    // ═══════════════════════════════════════
+
+    /**
+     * Step 1 of Stripe Connect onboarding: create a Connected Account (if not exists)
+     * and return a fresh Account Link (onboarding URL) for the owner to visit.
+     *
+     * IDEMPOTENCY: If the owner already has a stripeAccountId (started onboarding before),
+     * we reuse the existing account and generate a fresh Account Link.
+     * Stripe Account Links expire — they cannot be reused, but the account persists.
+     *
+     * The ownerId is encoded in the returnUrl as a query param so the return handler
+     * knows which user to update when Stripe redirects back.
+     */
+    @Transactional
+    public StripeConnectResponse initiateStripeConnect(UUID ownerId) {
+        User owner = userRepository.findById(ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", ownerId));
+
+        // Reuse existing Connected Account, or create a new one
+        String stripeAccountId = owner.getStripeAccountId();
+        if (stripeAccountId == null || stripeAccountId.isBlank()) {
+            stripeAccountId = stripeAdapter.createConnectedAccount(owner.getEmail());
+            owner.setStripeAccountId(stripeAccountId);
+            userRepository.save(owner);
+            log.info("Stripe Connected Account created: ownerId={}, accountId={}", ownerId, stripeAccountId);
+        } else {
+            log.info("Reusing existing Stripe Connected Account: ownerId={}, accountId={}", ownerId, stripeAccountId);
+        }
+
+        // Build return and refresh URLs — ownerId in query param for the return handler
+        String returnUrl  = baseUrl + "/api/v1/stripe/connect/return?ownerId=" + ownerId;
+        String refreshUrl = baseUrl + "/api/v1/stripe/connect/refresh?ownerId=" + ownerId + "&accountId=" + stripeAccountId;
+
+        String onboardingUrl = stripeAdapter.createAccountLink(stripeAccountId, returnUrl, refreshUrl);
+        return StripeConnectResponse.builder().onboardingUrl(onboardingUrl).build();
+    }
+
+    /**
+     * Step 2 of Stripe Connect onboarding: called when Stripe redirects the owner back
+     * after completing (or abandoning) the onboarding flow.
+     *
+     * Verifies that the account has completed onboarding (chargesEnabled = true).
+     * The stripeAccountId was already saved in step 1 — this just confirms completion.
+     *
+     * NOTE: Stripe does NOT pass the account ID in the return URL automatically —
+     * we use the ownerId param to look up the user and check their stored stripeAccountId.
+     */
+    @Transactional
+    public boolean completeStripeConnect(UUID ownerId) {
+        User owner = userRepository.findById(ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", ownerId));
+
+        String stripeAccountId = owner.getStripeAccountId();
+        if (stripeAccountId == null || stripeAccountId.isBlank()) {
+            throw new BusinessException("STRIPE_CONNECT_ERROR",
+                    "No Stripe account found for this owner. Please restart onboarding.");
+        }
+
+        boolean complete = stripeAdapter.isAccountOnboardingComplete(stripeAccountId);
+        log.info("Stripe Connect return: ownerId={}, accountId={}, complete={}", ownerId, stripeAccountId, complete);
+        return complete;
     }
 
     // ═══════════════════════════════════════

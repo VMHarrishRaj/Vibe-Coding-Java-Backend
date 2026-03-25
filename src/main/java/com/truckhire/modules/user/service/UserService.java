@@ -534,6 +534,7 @@ public class UserService {
                 .bankAccountNumber(user.getBankAccountNumber())
                 .bankRoutingNumber(user.getBankRoutingNumber())
                 .bankName(user.getBankName())
+                .stripeConnected(user.getStripeAccountId() != null && !user.getStripeAccountId().isBlank())
                 .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null)
                 .build();
     }
