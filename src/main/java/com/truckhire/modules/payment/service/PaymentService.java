@@ -773,18 +773,39 @@ public class PaymentService {
             PaymentTransaction txn) {
         com.truckhire.modules.booking.entity.Booking booking = txn.getBooking();
         com.truckhire.modules.truck.entity.Truck truck = booking.getTruck();
-        return com.truckhire.modules.payment.dto.MyPaymentHistoryResponse.builder()
+
+        com.truckhire.modules.payment.dto.MyPaymentHistoryResponse.MyPaymentHistoryResponseBuilder builder =
+                com.truckhire.modules.payment.dto.MyPaymentHistoryResponse.builder()
                 .id(txn.getId().toString())
                 .bookingId(booking.getId().toString())
                 .bookingNumber(booking.getBookingNumber())
+                .truckId(truck != null ? truck.getId().toString() : null)
                 .truckModel(truck != null ? truck.getModel() : null)
                 .amount(txn.getAmount())
                 .status(txn.getStatus().name())
                 .type(txn.getType().name())
                 .gateway(txn.getGateway().name())
                 .currency(txn.getCurrency())
-                .createdAt(txn.getCreatedAt() != null ? txn.getCreatedAt().toString() : null)
-                .build();
+                .createdAt(txn.getCreatedAt() != null ? txn.getCreatedAt().toString() : null);
+
+        // ── Owner-only enrichment — only for PAYOUT transactions ──
+        if (txn.getType() == PaymentType.PAYOUT) {
+            builder.startDate(booking.getStartDate() != null ? booking.getStartDate().toString() : null)
+                   .endDate(booking.getEndDate() != null ? booking.getEndDate().toString() : null)
+                   .failureReason(txn.getFailureReason());
+
+            // grossAmount — from the SUCCEEDED CHARGE on this booking
+            // (platformFee and ownerAmount were written onto the CHARGE when payout was initiated)
+            transactionRepository.findByBookingIdAndTypeAndStatus(
+                    booking.getId(), PaymentType.CHARGE, PaymentStatus.SUCCEEDED)
+                    .ifPresent(charge -> builder.grossAmount(charge.getAmount()));
+
+            // platformFeePercent — from current platform settings
+            PlatformSettings settings = platformSettingsService.getSettings();
+            builder.platformFeePercent(settings.getPlatformFeePercent());
+        }
+
+        return builder.build();
     }
 
     private String resolveOwnerGatewayId(User owner, PaymentGateway gateway) {
