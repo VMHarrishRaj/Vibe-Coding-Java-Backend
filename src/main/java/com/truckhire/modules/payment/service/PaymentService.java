@@ -515,7 +515,7 @@ public class PaymentService {
                 contactId,
                 request.getAccountHolderName(),
                 request.getAccountNumber(),
-                request.getIfscCode());
+                request.getRoutingNumber());
 
         owner.setRazorpayFundAccountId(fundAccountId);
         userRepository.save(owner);
@@ -626,8 +626,24 @@ public class PaymentService {
         com.truckhire.modules.booking.entity.Booking booking = txn.getBooking();
         com.truckhire.modules.truck.entity.Truck truck = booking.getTruck();
         User renter = booking.getRenter();
+        User owner = booking.getOwner();
 
         PlatformSettings settings = platformSettingsService.getSettings();
+
+        // Build owner bank info — null if owner has not linked a bank account yet
+        com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.OwnerInfo ownerInfo = null;
+        if (owner.getBankAccountNumber() != null) {
+            String raw = owner.getBankAccountNumber();
+            String masked = raw.length() > 4
+                    ? "****" + raw.substring(raw.length() - 4)
+                    : "****";
+            ownerInfo = com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.OwnerInfo.builder()
+                    .fullname(owner.getFullname())
+                    .bankName(owner.getBankName())
+                    .accountNumber(masked)
+                    .routingNumber(owner.getBankRoutingNumber())
+                    .build();
+        }
 
         return com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.builder()
                 .id(txn.getId().toString())
@@ -661,6 +677,7 @@ public class PaymentService {
                                 .email(renter.getEmail())
                                 .phone(renter.getPhone())
                                 .build())
+                        .owner(ownerInfo)
                         .truck(com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.TruckInfo.builder()
                                 .model(truck.getModel())
                                 .pricePerDay(booking.getPricePerDay())
@@ -669,6 +686,23 @@ public class PaymentService {
                                 .build())
                         .build())
                 .build();
+    }
+
+    /**
+     * Payout shortcut by payment transaction ID.
+     * Looks up the transaction, extracts its booking ID, and delegates to initiateOwnerPayout.
+     * Used by POST /admin/payments/{id}/payout so the admin can trigger payout directly
+     * from the invoice detail page without needing to know the booking ID.
+     */
+    @Transactional
+    public void initiateOwnerPayoutByTransactionId(UUID transactionId) {
+        PaymentTransaction txn = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new ResourceNotFoundException("PaymentTransaction", "id", transactionId));
+        if (txn.getType() != PaymentType.CHARGE) {
+            throw new BusinessException("INVALID_TRANSACTION_TYPE",
+                    "Payout can only be initiated from a CHARGE transaction.");
+        }
+        initiateOwnerPayout(txn.getBooking().getId());
     }
 
     private com.truckhire.modules.payment.dto.AdminPaymentListResponse mapToAdminPaymentListResponse(

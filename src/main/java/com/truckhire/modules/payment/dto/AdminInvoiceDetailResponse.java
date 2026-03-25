@@ -55,6 +55,7 @@ public class AdminInvoiceDetailResponse {
         private BigDecimal tax;                     // null — future phase
 
         private RenterInfo renter;
+        private OwnerInfo owner;
         private TruckInfo truck;
     }
 
@@ -66,6 +67,17 @@ public class AdminInvoiceDetailResponse {
         private String fullname;
         private String email;
         private String phone;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class OwnerInfo {
+        private String fullname;
+        private String bankName;
+        private String accountNumber;   // masked: ****XXXX (last 4 digits only)
+        private String routingNumber;   // bank_ifsc_code / routing number
     }
 
     @Data

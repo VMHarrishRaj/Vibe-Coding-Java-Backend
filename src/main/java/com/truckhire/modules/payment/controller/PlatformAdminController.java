@@ -69,6 +69,17 @@ public class PlatformAdminController {
     }
 
     /**
+     * POST /admin/payments/{id}/payout — trigger owner payout directly from an invoice.
+     * Shortcut over POST /admin/bookings/{id}/payout: the admin doesn't need to know the
+     * booking ID — they can initiate payout straight from the invoice detail page.
+     */
+    @PostMapping("/admin/payments/{id}/payout")
+    public ResponseEntity<ApiResponse<Void>> initiatePayoutByTransactionId(@PathVariable UUID id) {
+        paymentService.initiateOwnerPayoutByTransactionId(id);
+        return ResponseEntity.ok(ApiResponse.success("Owner payout initiated", null));
+    }
+
+    /**
      * GET /admin/payments — paginated list of all CHARGE transactions (invoices).
      * Supports optional free-text search on invoice number or booking number.
      */
