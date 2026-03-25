@@ -223,9 +223,23 @@ public class UserService {
             userPage = userRepository.findByDeletedAtIsNull(pageable);
         }
 
+        // Batch-load vehicle counts for all OWNER users on this page in a single query.
+        // Previously each owner triggered a separate COUNT query (N+1).
+        // Now: collect owner IDs → one GROUP BY query → build a lookup map → use in mapping.
+        List<UUID> ownerIds = userPage.getContent().stream()
+                .filter(u -> "OWNER".equals(u.getRole().getName()))
+                .map(User::getId)
+                .collect(Collectors.toList());
+
+        Map<UUID, Long> vehicleCountMap = new java.util.HashMap<>();
+        if (!ownerIds.isEmpty()) {
+            truckRepository.countTrucksByOwnerIds(ownerIds)
+                    .forEach(row -> vehicleCountMap.put((UUID) row[0], (Long) row[1]));
+        }
+
         return PagedResponse.<AdminUserListResponse>builder()
                 .content(userPage.getContent().stream()
-                        .map(this::mapToAdminListResponse)
+                        .map(u -> mapToAdminListResponse(u, vehicleCountMap))
                         .collect(Collectors.toList()))
                 .pageNumber(userPage.getNumber())
                 .pageSize(userPage.getSize())
@@ -541,11 +555,10 @@ public class UserService {
 
     /**
      * Map User entity to condensed admin list response.
+     * vehicleCountMap is pre-loaded in bulk by the caller — no per-user DB query here.
      */
-    private AdminUserListResponse mapToAdminListResponse(User user) {
-        long vehicleCount = "OWNER".equals(user.getRole().getName())
-                ? truckRepository.countByOwnerIdAndDeletedAtIsNull(user.getId())
-                : 0L;
+    private AdminUserListResponse mapToAdminListResponse(User user, Map<UUID, Long> vehicleCountMap) {
+        long vehicleCount = vehicleCountMap.getOrDefault(user.getId(), 0L);
 
         return AdminUserListResponse.builder()
                 .id(user.getId().toString())
