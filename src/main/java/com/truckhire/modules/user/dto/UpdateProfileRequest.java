@@ -58,8 +58,8 @@ public class UpdateProfileRequest {
     @Size(max = 50, message = "Bank account number must not exceed 50 characters")
     private String bankAccountNumber;
 
-    @Size(max = 20, message = "IFSC code must not exceed 20 characters")
-    private String bankIfscCode;
+    @Size(max = 50, message = "Bank routing number must not exceed 50 characters")
+    private String bankRoutingNumber;
 
     @Size(max = 255, message = "Bank name must not exceed 255 characters")
     private String bankName;

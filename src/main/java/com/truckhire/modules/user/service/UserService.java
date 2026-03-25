@@ -127,8 +127,8 @@ public class UserService {
         if (request.getBankAccountNumber() != null) {
             user.setBankAccountNumber(request.getBankAccountNumber());
         }
-        if (request.getBankIfscCode() != null) {
-            user.setBankIfscCode(request.getBankIfscCode());
+        if (request.getBankRoutingNumber() != null) {
+            user.setBankRoutingNumber(request.getBankRoutingNumber());
         }
         if (request.getBankName() != null) {
             user.setBankName(request.getBankName());
@@ -157,8 +157,8 @@ public class UserService {
         if (request.getBankAccountNumber() != null) {
             user.setBankAccountNumber(request.getBankAccountNumber());
         }
-        if (request.getBankIfscCode() != null) {
-            user.setBankIfscCode(request.getBankIfscCode());
+        if (request.getBankRoutingNumber() != null) {
+            user.setBankRoutingNumber(request.getBankRoutingNumber());
         }
         if (request.getBankName() != null) {
             user.setBankName(request.getBankName());
@@ -508,7 +508,7 @@ public class UserService {
                 .profileImageUrl(user.getProfileImageUrl())
                 .bankAccountName(user.getBankAccountName())
                 .bankAccountNumber(user.getBankAccountNumber())
-                .bankIfscCode(user.getBankIfscCode())
+                .bankRoutingNumber(user.getBankRoutingNumber())
                 .bankName(user.getBankName())
                 .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null)
                 .build();

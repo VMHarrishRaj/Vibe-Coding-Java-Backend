@@ -63,6 +63,6 @@ public class RegisterRequest {
     // ── Optional bank details (for OWNER settlement payouts) ──
     private String bankAccountName;
     private String bankAccountNumber;
-    private String bankIfscCode;
+    private String bankRoutingNumber;
     private String bankName;
 }

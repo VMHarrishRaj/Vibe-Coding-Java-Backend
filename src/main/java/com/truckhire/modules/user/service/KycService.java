@@ -28,7 +28,7 @@ import java.util.stream.Collectors;
  *
  * BUSINESS RULES:
  * 1. Both OWNERs and RENTERs can upload KYC documents
- * 2. Document types: AADHAAR, PAN, LICENSE (category = "KYC" in document_types)
+ * 2. Document types: DRIVER_LICENSE, PASSPORT, STATE_ID (category = "KYC" in document_types)
  * 3. Files stored on disk via FileStorageService, path saved in DB
  * 4. Admin can verify KYC → sets user.kyc_verified = true
  * 5. For OWNERs: KYC verification required before adding trucks (guarded in TruckService)
