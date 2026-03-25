@@ -101,7 +101,7 @@ public class PaymentController {
                 request.getRazorpayPaymentId(),
                 request.getRazorpaySignature()
         );
-        return ResponseEntity.ok(ApiResponse.success("Mileage payment verified. Payout initiated.", null));
+        return ResponseEntity.ok(ApiResponse.success("Mileage payment verified. Admin will initiate owner payout.", null));
     }
 
     /**

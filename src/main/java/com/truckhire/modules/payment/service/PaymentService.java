@@ -218,8 +218,16 @@ public class PaymentService {
             txn.setStatus(PaymentStatus.SUCCEEDED);
             txn.setGatewayPaymentId(paymentIntentId);
             transactionRepository.save(txn);
-            confirmBooking(txn.getBooking().getId());
-            log.info("Stripe webhook: booking confirmed via webhook. piId={}", paymentIntentId);
+
+            // Only CHARGE triggers booking confirmation (PENDING -> AWAITING_APPROVAL).
+            // MILEAGE_TOPUP is collected after booking is already COMPLETED — no status change needed.
+            if (txn.getType() == PaymentType.CHARGE) {
+                confirmBooking(txn.getBooking().getId());
+                log.info("Stripe webhook: booking confirmed via webhook. piId={}", paymentIntentId);
+            } else {
+                log.info("Stripe webhook: mileage payment confirmed, booking unchanged. piId={}, type={}",
+                        paymentIntentId, txn.getType());
+            }
         });
     }
 
@@ -688,9 +696,9 @@ public class PaymentService {
                 .orElseThrow(() -> new com.truckhire.common.exception.ResourceNotFoundException(
                         "PaymentTransaction", "id", transactionId));
 
-        if (txn.getType() != PaymentType.CHARGE) {
+        if (txn.getType() != PaymentType.CHARGE && txn.getType() != PaymentType.MILEAGE_TOPUP) {
             throw new com.truckhire.common.exception.BusinessException(
-                    "INVALID_TRANSACTION_TYPE", "Invoice detail is only available for CHARGE transactions.");
+                    "INVALID_TRANSACTION_TYPE", "Invoice detail is only available for CHARGE or MILEAGE_TOPUP transactions.");
         }
 
         com.truckhire.modules.booking.entity.Booking booking = txn.getBooking();
@@ -715,12 +723,15 @@ public class PaymentService {
                     .build();
         }
 
+        boolean isMileage = txn.getType() == PaymentType.MILEAGE_TOPUP;
+
         return com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.builder()
                 .id(txn.getId().toString())
                 .invoiceNumber(txn.getInvoiceNumber())
                 .bookingNumber(booking.getBookingNumber())
                 .paymentDate(txn.getCreatedAt() != null ? txn.getCreatedAt().toString() : null)
                 .gateway(txn.getGateway().name())
+                .invoiceType(isMileage ? "MILEAGE" : "DAY_RATE")
                 .paymentStatus(txn.getStatus().name())
                 .settlementStatus(resolveSettlementStatus(txn))
                 .total(txn.getAmount())
@@ -733,6 +744,13 @@ public class PaymentService {
                 .transactionId(txn.getGatewayPaymentId())
                 .paymentMethod(txn.getPaymentMethod())
                 .cardLast4(txn.getCardLast4())
+                // Mileage breakdown — populated only for MILEAGE invoices
+                .milesDriven(isMileage ? booking.getOdometerEnd() != null && booking.getOdometerStart() != null
+                        ? booking.getOdometerEnd() - booking.getOdometerStart() : null : null)
+                .costPerMile(isMileage ? booking.getCostPerMile() : null)
+                .dayAmount(isMileage ? booking.getDayAmount() : null)
+                .mileageAmount(isMileage ? booking.getMileageAmount() : null)
+                .totalBookingAmount(isMileage ? booking.getTotalAmount() : null)
                 .booking(com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.BookingDetail.builder()
                         .id(booking.getId().toString())
                         .startDate(booking.getStartDate().toString())
@@ -784,6 +802,7 @@ public class PaymentService {
                 .bookingNumber(booking.getBookingNumber())
                 .renterName(booking.getRenter().getFullname())
                 .paymentDate(txn.getCreatedAt() != null ? txn.getCreatedAt().toString() : null)
+                .invoiceType(txn.getType() == PaymentType.MILEAGE_TOPUP ? "MILEAGE" : "DAY_RATE")
                 .total(txn.getAmount())
                 .ownerShare(txn.getOwnerAmount())
                 .platformShare(txn.getPlatformFee())
@@ -864,11 +883,16 @@ public class PaymentService {
                    .endDate(booking.getEndDate() != null ? booking.getEndDate().toString() : null)
                    .failureReason(txn.getFailureReason());
 
-            // grossAmount — from the SUCCEEDED CHARGE on this booking
-            // (platformFee and ownerAmount were written onto the CHARGE when payout was initiated)
-            transactionRepository.findByBookingIdAndTypeAndStatus(
-                    booking.getId(), PaymentType.CHARGE, PaymentStatus.SUCCEEDED)
-                    .ifPresent(charge -> builder.grossAmount(charge.getAmount()));
+            // grossAmount — use booking.totalAmount if set (includes mileage + day rate),
+            // otherwise fall back to the CHARGE transaction amount (day rate only).
+            // totalAmount is set when booking transitions to COMPLETED (after odometer_end).
+            if (booking.getTotalAmount() != null) {
+                builder.grossAmount(booking.getTotalAmount());
+            } else {
+                transactionRepository.findByBookingIdAndTypeAndStatus(
+                        booking.getId(), PaymentType.CHARGE, PaymentStatus.SUCCEEDED)
+                        .ifPresent(charge -> builder.grossAmount(charge.getAmount()));
+            }
 
             // platformFeePercent — from current platform settings
             PlatformSettings settings = platformSettingsService.getSettings();

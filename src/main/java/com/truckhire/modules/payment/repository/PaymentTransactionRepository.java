@@ -30,30 +30,31 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     boolean existsByBookingIdAndTypeAndStatusIn(UUID bookingId, PaymentType type, java.util.List<PaymentStatus> statuses);
 
     /**
-     * Admin payments list — CHARGE transactions only, with booking + renter eagerly loaded.
+     * Admin payments list — CHARGE + MILEAGE_TOPUP transactions, with booking + renter eagerly loaded.
+     * Each row is one invoice entry: day-rate charge OR mileage charge.
      * Supports optional free-text search on invoiceNumber or bookingNumber.
      */
     @Query(value = """
             SELECT t FROM PaymentTransaction t
             JOIN FETCH t.booking b
             JOIN FETCH b.renter
-            WHERE t.type = 'CHARGE'
+            WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')
             ORDER BY t.createdAt DESC
             """,
-            countQuery = "SELECT COUNT(t) FROM PaymentTransaction t JOIN t.booking b WHERE t.type = 'CHARGE'")
+            countQuery = "SELECT COUNT(t) FROM PaymentTransaction t JOIN t.booking b WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')")
     Page<PaymentTransaction> findAllChargesWithDetails(Pageable pageable);
 
     @Query(value = """
             SELECT t FROM PaymentTransaction t
             JOIN FETCH t.booking b
             JOIN FETCH b.renter
-            WHERE t.type = 'CHARGE'
+            WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')
               AND (:q IS NULL OR LOWER(t.invoiceNumber) LIKE :q OR LOWER(b.bookingNumber) LIKE :q)
             ORDER BY t.createdAt DESC
             """,
             countQuery = """
             SELECT COUNT(t) FROM PaymentTransaction t JOIN t.booking b
-            WHERE t.type = 'CHARGE'
+            WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')
               AND (:q IS NULL OR LOWER(t.invoiceNumber) LIKE :q OR LOWER(b.bookingNumber) LIKE :q)
             """)
     Page<PaymentTransaction> searchChargesWithDetails(@Param("q") String q, Pageable pageable);
@@ -62,13 +63,13 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     @Query(value = "SELECT nextval('invoice_seq')", nativeQuery = true)
     long nextInvoiceSequence();
 
-    // RENTER payment history — CHARGE + REFUND transactions for bookings they rented
+    // RENTER payment history — CHARGE + MILEAGE_TOPUP + REFUND transactions for bookings they rented
     @Query("""
             SELECT t FROM PaymentTransaction t
             JOIN FETCH t.booking b
             JOIN FETCH b.truck
             WHERE b.renter.id = :userId
-              AND t.type IN ('CHARGE', 'REFUND')
+              AND t.type IN ('CHARGE', 'MILEAGE_TOPUP', 'REFUND')
             ORDER BY t.createdAt DESC
             """)
     org.springframework.data.domain.Page<PaymentTransaction> findRenterPaymentHistory(

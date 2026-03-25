@@ -9,7 +9,8 @@ import java.math.BigDecimal;
 
 /**
  * DTO for GET /admin/payments — paginated invoice list.
- * One row per CHARGE transaction (represents one booking payment).
+ * One row per CHARGE or MILEAGE_TOPUP transaction.
+ * A booking with mileage charges will appear as two rows in this list.
  */
 @Data
 @Builder
@@ -22,9 +23,10 @@ public class AdminPaymentListResponse {
     private String bookingNumber;    // BK001, BK002...
     private String renterName;
     private String paymentDate;      // transaction createdAt
+    private String invoiceType;      // "DAY_RATE" or "MILEAGE" — derived from transaction type
     private BigDecimal total;        // amount charged to renter
     private BigDecimal ownerShare;   // owner_amount (null until payout initiated)
     private BigDecimal platformShare;// platform_fee (null until payout initiated)
     private String paymentStatus;    // SUCCEEDED / FAILED / REFUNDED / PENDING
-    private String settlementStatus; // SETTLED / PAYOUT_PENDING / PENDING
+    private String settlementStatus; // SETTLED / PAYOUT_PENDING / PENDING (MILEAGE rows always show PENDING until combined payout)
 }
