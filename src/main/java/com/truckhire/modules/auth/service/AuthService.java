@@ -317,6 +317,7 @@ public class AuthService {
                 .expiresIn(jwtService.getAccessTokenExpirationSeconds())
                 .user(AuthResponse.UserInfo.builder()
                         .id(user.getId().toString())
+                        .role(user.getRole().getName())
                         .build())
                 .build();
     }
