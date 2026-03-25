@@ -560,7 +560,7 @@ public class PaymentService {
         // Reuse existing Connected Account, or create a new one
         String stripeAccountId = owner.getStripeAccountId();
         if (stripeAccountId == null || stripeAccountId.isBlank()) {
-            stripeAccountId = stripeAdapter.createConnectedAccount(owner.getEmail());
+            stripeAccountId = stripeAdapter.createConnectedAccount(owner);
             owner.setStripeAccountId(stripeAccountId);
             userRepository.save(owner);
             log.info("Stripe Connected Account created: ownerId={}, accountId={}", ownerId, stripeAccountId);
