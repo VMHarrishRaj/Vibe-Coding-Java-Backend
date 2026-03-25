@@ -634,6 +634,15 @@ public class PaymentService {
     }
 
     private PaymentStatusResponse buildPaymentStatusResponse(UUID bookingId, PaymentTransaction txn) {
+        // For Stripe PENDING transactions, retrieve the clientSecret so mobile can open the payment sheet.
+        // This covers both initial CHARGE and MILEAGE_TOPUP flows — same pattern, no extra endpoint needed.
+        String clientSecret = null;
+        if (txn.getGateway() == PaymentGateway.STRIPE
+                && txn.getStatus() == PaymentStatus.PENDING
+                && txn.getGatewayOrderId() != null) {
+            clientSecret = stripeAdapter.getClientSecret(txn.getGatewayOrderId());
+        }
+
         return PaymentStatusResponse.builder()
                 .bookingId(bookingId.toString())
                 .status(txn.getStatus().name())
@@ -643,6 +652,7 @@ public class PaymentService {
                 .currency(txn.getCurrency())
                 .gatewayOrderId(txn.getGatewayOrderId())
                 .gatewayPaymentId(txn.getGatewayPaymentId())
+                .clientSecret(clientSecret)
                 .createdAt(txn.getCreatedAt() != null ? txn.getCreatedAt().toString() : null)
                 .updatedAt(txn.getUpdatedAt() != null ? txn.getUpdatedAt().toString() : null)
                 .build();

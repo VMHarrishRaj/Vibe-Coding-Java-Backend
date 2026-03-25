@@ -19,6 +19,7 @@ public class PaymentStatusResponse {
     private String currency;
     private String gatewayOrderId;
     private String gatewayPaymentId;
+    private String clientSecret;     // Stripe only — present when gateway=STRIPE and status=PENDING
     private String createdAt;
     private String updatedAt;
 }
