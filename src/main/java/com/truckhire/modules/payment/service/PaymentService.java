@@ -560,7 +560,7 @@ public class PaymentService {
         // Reuse existing Connected Account, or create a new one
         String stripeAccountId = owner.getStripeAccountId();
         if (stripeAccountId == null || stripeAccountId.isBlank()) {
-            stripeAccountId = stripeAdapter.createConnectedAccount(owner);
+            stripeAccountId = stripeAdapter.createConnectedAccount(owner, baseUrl);
             owner.setStripeAccountId(stripeAccountId);
             userRepository.save(owner);
             log.info("Stripe Connected Account created: ownerId={}, accountId={}", ownerId, stripeAccountId);
@@ -808,9 +808,9 @@ public class PaymentService {
     public void initiateOwnerPayoutByTransactionId(UUID transactionId) {
         PaymentTransaction txn = transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new ResourceNotFoundException("PaymentTransaction", "id", transactionId));
-        if (txn.getType() != PaymentType.CHARGE) {
+        if (txn.getType() != PaymentType.CHARGE && txn.getType() != PaymentType.MILEAGE_TOPUP) {
             throw new BusinessException("INVALID_TRANSACTION_TYPE",
-                    "Payout can only be initiated from a CHARGE transaction.");
+                    "Payout can only be initiated from a payment invoice (CHARGE or MILEAGE_TOPUP).");
         }
         initiateOwnerPayout(txn.getBooking().getId());
     }

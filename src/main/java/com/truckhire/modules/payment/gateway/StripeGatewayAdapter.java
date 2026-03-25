@@ -144,9 +144,25 @@ public class StripeGatewayAdapter implements GatewayPort {
      *
      * Returns the new Stripe account ID (acct_...).
      */
-    public String createConnectedAccount(User owner) {
+    public String createConnectedAccount(User owner, String platformUrl) {
         try {
-            // Build the individual pre-fill block with whatever profile data we have
+            // Build the individual pre-fill block with whatever profile data we have.
+            //
+            // FIELDS INCLUDED:
+            //   - email, first/last name, DOB: safe — no format constraints beyond basic validity
+            //   - line1, city, zipcode: safe — free-form strings Stripe accepts as-is
+            //   - business_profile.url: pre-filled with platformUrl (APP_BASE_URL) so the
+            //     "Provide a business website" requirement does not block onboarding.
+            //     Stripe requires this field on all Express accounts (currently_due).
+            //
+            // FIELDS INTENTIONALLY EXCLUDED:
+            //   - phone: DB stores raw digits (e.g. "9001234567"); Stripe requires E.164
+            //     format ("+19001234567"). Conversion is fragile without knowing country code.
+            //   - state: DB stores full names (e.g. "Texas"); Stripe requires ISO 3166-2
+            //     subdivision codes (e.g. "TX"). Owner enters this on Stripe's form.
+            //   - country (address + top-level): DB stores full names (e.g. "India");
+            //     Stripe requires ISO alpha-2 (e.g. "US"). Also, address.country must
+            //     match the top-level account country — safer to let Stripe's form handle both.
             AccountCreateParams.Individual.Builder individualBuilder =
                     AccountCreateParams.Individual.builder()
                             .setEmail(owner.getEmail());
@@ -159,10 +175,6 @@ public class StripeGatewayAdapter implements GatewayPort {
                 }
             }
 
-            if (owner.getPhone() != null && !owner.getPhone().isBlank()) {
-                individualBuilder.setPhone(owner.getPhone());
-            }
-
             if (owner.getDob() != null) {
                 individualBuilder.setDob(
                         AccountCreateParams.Individual.Dob.builder()
@@ -173,7 +185,8 @@ public class StripeGatewayAdapter implements GatewayPort {
                 );
             }
 
-            // Address pre-fill (all sub-fields optional)
+            // Address pre-fill: only line1, city, zipcode — safe free-form fields.
+            // State and country are excluded (see comment above).
             AccountCreateParams.Individual.Address.Builder addrBuilder =
                     AccountCreateParams.Individual.Address.builder();
             boolean hasAddress = false;
@@ -185,17 +198,10 @@ public class StripeGatewayAdapter implements GatewayPort {
                 addrBuilder.setCity(owner.getCity());
                 hasAddress = true;
             }
-            if (owner.getState() != null && !owner.getState().isBlank()) {
-                addrBuilder.setState(owner.getState());
-                hasAddress = true;
-            }
             if (owner.getZipcode() != null && !owner.getZipcode().isBlank()) {
                 addrBuilder.setPostalCode(owner.getZipcode());
                 hasAddress = true;
             }
-            // Country is intentionally NOT pre-filled — the DB stores full country names
-            // (e.g. "India", "United States") but Stripe requires ISO 3166-1 alpha-2 codes
-            // (e.g. "IN", "US"). The owner selects their country on Stripe's onboarding form.
             if (hasAddress) {
                 individualBuilder.setAddress(addrBuilder.build());
             }
@@ -203,7 +209,11 @@ public class StripeGatewayAdapter implements GatewayPort {
             AccountCreateParams params = AccountCreateParams.builder()
                     .setType(AccountCreateParams.Type.EXPRESS)
                     .setEmail(owner.getEmail())
+                    .setBusinessType(AccountCreateParams.BusinessType.INDIVIDUAL)
                     .setIndividual(individualBuilder.build())
+                    .setBusinessProfile(AccountCreateParams.BusinessProfile.builder()
+                            .setUrl(platformUrl)
+                            .build())
                     .setCapabilities(AccountCreateParams.Capabilities.builder()
                             .setTransfers(AccountCreateParams.Capabilities.Transfers.builder()
                                     .setRequested(true)
@@ -256,7 +266,12 @@ public class StripeGatewayAdapter implements GatewayPort {
     public boolean isAccountOnboardingComplete(String stripeAccountId) {
         try {
             Account account = client().accounts().retrieve(stripeAccountId);
-            return Boolean.TRUE.equals(account.getChargesEnabled());
+            // Both chargesEnabled AND payoutsEnabled must be true.
+            // chargesEnabled alone is insufficient — an account can accept payments but still
+            // have payouts blocked (e.g. no bank account added yet). We need payoutsEnabled=true
+            // to ensure the owner can actually receive money from the platform.
+            return Boolean.TRUE.equals(account.getChargesEnabled())
+                    && Boolean.TRUE.equals(account.getPayoutsEnabled());
         } catch (StripeException e) {
             log.error("Stripe account retrieve failed: accountId={}, error={}", stripeAccountId, e.getMessage());
             throw new BusinessException("PAYMENT_GATEWAY_ERROR",
