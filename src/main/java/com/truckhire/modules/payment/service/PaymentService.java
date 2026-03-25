@@ -608,9 +608,18 @@ public class PaymentService {
 
     @Transactional(readOnly = true)
     public PaymentStatusResponse getPaymentStatus(UUID bookingId) {
-        // Return the most recent transaction for this booking (any type).
-        // After return, this will surface MILEAGE_TOPUP/PENDING so frontend knows to open checkout again.
-        // If no transaction exists yet (renter hasn't initiated payment), return NOT_INITIATED instead of 404.
+        // Priority: always surface MILEAGE_TOPUP/PENDING first if one exists.
+        // Without this, a PAYOUT created after the mileage order (e.g. admin triggers payout early)
+        // would overshadow the MILEAGE_TOPUP and the renter would never see the pay prompt.
+        Optional<PaymentTransaction> pendingMileage = transactionRepository
+                .findByBookingIdAndTypeAndStatus(bookingId, PaymentType.MILEAGE_TOPUP, PaymentStatus.PENDING);
+        if (pendingMileage.isPresent()) {
+            PaymentTransaction txn = pendingMileage.get();
+            return buildPaymentStatusResponse(bookingId, txn);
+        }
+
+        // Otherwise return the most recent transaction (any type).
+        // If no transaction exists yet, return NOT_INITIATED instead of 404.
         Optional<PaymentTransaction> txnOpt = transactionRepository
                 .findFirstByBookingIdOrderByCreatedAtDesc(bookingId);
 
@@ -621,7 +630,10 @@ public class PaymentService {
                     .build();
         }
 
-        PaymentTransaction txn = txnOpt.get();
+        return buildPaymentStatusResponse(bookingId, txnOpt.get());
+    }
+
+    private PaymentStatusResponse buildPaymentStatusResponse(UUID bookingId, PaymentTransaction txn) {
         return PaymentStatusResponse.builder()
                 .bookingId(bookingId.toString())
                 .status(txn.getStatus().name())
