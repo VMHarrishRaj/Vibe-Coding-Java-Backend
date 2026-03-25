@@ -457,6 +457,30 @@ public class UserService {
     }
 
     // ═══════════════════════════════════════
+    /**
+     * Change password for a logged-in user.
+     *
+     * Requires the current password to be correct before updating.
+     * This is separate from the forgot-password OTP flow — no email required.
+     *
+     * @param userId          The ID from SecurityContext
+     * @param request         currentPassword + newPassword
+     */
+    @Transactional
+    public void changePassword(UUID userId, ChangePasswordRequest request) {
+        User user = findActiveUserById(userId);
+
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
+            throw new BusinessException("INCORRECT_PASSWORD",
+                    "Current password is incorrect.");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+        log.info("Password changed by user: id={}", userId);
+    }
+
+    // ═══════════════════════════════════════
     // PRIVATE HELPERS
     // ═══════════════════════════════════════
 

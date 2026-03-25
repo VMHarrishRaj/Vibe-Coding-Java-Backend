@@ -3,6 +3,7 @@ package com.truckhire.modules.user.controller;
 import com.truckhire.common.dto.ApiResponse;
 import com.truckhire.common.util.SecurityUtils;
 import com.truckhire.modules.user.dto.KycDocumentResponse;
+import com.truckhire.modules.user.dto.ChangePasswordRequest;
 import com.truckhire.modules.user.dto.UpdateBankRequest;
 import com.truckhire.modules.user.dto.UpdateProfileRequest;
 import com.truckhire.modules.user.dto.UserProfileResponse;
@@ -86,6 +87,22 @@ public class UserController {
                 currentUser.getId(), request);
 
         return ResponseEntity.ok(ApiResponse.success("Bank details updated", updatedProfile));
+    }
+
+    /**
+     * PUT /api/v1/users/me/password
+     *
+     * Change password for the authenticated user.
+     * Requires current password — no OTP needed.
+     * Returns 400 INCORRECT_PASSWORD if current password is wrong.
+     */
+    @PutMapping("/me/password")
+    public ResponseEntity<ApiResponse<Void>> changePassword(
+            @Valid @RequestBody ChangePasswordRequest request) {
+
+        User currentUser = SecurityUtils.getCurrentUser();
+        userService.changePassword(currentUser.getId(), request);
+        return ResponseEntity.ok(ApiResponse.success("Password changed successfully", null));
     }
 
     // ═══════════════════════════════════════
