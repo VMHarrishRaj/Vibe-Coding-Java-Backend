@@ -730,20 +730,20 @@ public class PaymentService {
 
         PlatformSettings settings = platformSettingsService.getSettings();
 
-        // Build owner bank info — null if owner has not linked a bank account yet
-        com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.OwnerInfo ownerInfo = null;
+        // Build owner info block — always present; bank fields null if owner has not linked a bank account
+        String maskedAccount = null;
         if (owner.getBankAccountNumber() != null) {
             String raw = owner.getBankAccountNumber();
-            String masked = raw.length() > 4
-                    ? "****" + raw.substring(raw.length() - 4)
-                    : "****";
-            ownerInfo = com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.OwnerInfo.builder()
-                    .fullname(owner.getFullname())
-                    .bankName(owner.getBankName())
-                    .accountNumber(masked)
-                    .routingNumber(owner.getBankRoutingNumber())
-                    .build();
+            maskedAccount = raw.length() > 4 ? "****" + raw.substring(raw.length() - 4) : "****";
         }
+        com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.OwnerInfo ownerInfo =
+                com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.OwnerInfo.builder()
+                        .fullname(owner.getFullname())
+                        .stripeConnected(owner.getStripeAccountId() != null)
+                        .bankName(owner.getBankAccountNumber() != null ? owner.getBankName() : null)
+                        .accountNumber(maskedAccount)
+                        .routingNumber(owner.getBankAccountNumber() != null ? owner.getBankRoutingNumber() : null)
+                        .build();
 
         boolean isMileage = txn.getType() == PaymentType.MILEAGE_TOPUP;
 
