@@ -457,6 +457,14 @@ public class UserService {
         User savedAdmin = userRepository.save(admin);
         log.info("Admin created: id={}, email={}", savedAdmin.getId(), savedAdmin.getEmail());
 
+        // ── Send welcome email with login credentials ──
+        // Non-blocking: email failure must not roll back admin creation.
+        try {
+            emailSender.sendWelcomeEmail(savedAdmin.getEmail(), savedAdmin.getFullname(), request.getPassword(), "ADMIN");
+        } catch (Exception e) {
+            log.error("Welcome email failed for admin {}: {}", savedAdmin.getId(), e.getMessage());
+        }
+
         String token = jwtService.generateAccessToken(
                 savedAdmin.getId(), savedAdmin.getEmail(), Role.ADMIN);
 
