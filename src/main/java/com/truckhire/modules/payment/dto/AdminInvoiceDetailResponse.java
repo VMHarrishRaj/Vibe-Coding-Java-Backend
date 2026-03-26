@@ -83,9 +83,10 @@ public class AdminInvoiceDetailResponse {
     @AllArgsConstructor
     public static class OwnerInfo {
         private String fullname;
+        private boolean stripeConnected; // true when owner has completed Stripe Connect onboarding
         private String bankName;
-        private String accountNumber;   // masked: ****XXXX (last 4 digits only)
-        private String routingNumber;   // bank_ifsc_code / routing number
+        private String accountNumber;   // masked: ****XXXX (last 4 digits only) — null if no bank account linked
+        private String routingNumber;   // null if no bank account linked
     }
 
     @Data
