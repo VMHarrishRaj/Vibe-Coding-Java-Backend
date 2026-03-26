@@ -16,7 +16,9 @@ import com.truckhire.modules.payment.enums.PaymentGateway;
 import com.truckhire.modules.payment.enums.PaymentStatus;
 import com.truckhire.modules.payment.enums.PaymentType;
 import com.truckhire.modules.payment.dto.LinkBankAccountRequest;
+import com.truckhire.modules.payment.dto.StripeConnectResponse;
 import com.truckhire.modules.payment.gateway.GatewayPort;
+import org.springframework.beans.factory.annotation.Value;
 import com.truckhire.modules.payment.gateway.RazorpayGatewayAdapter;
 import com.truckhire.modules.payment.gateway.StripeGatewayAdapter;
 import com.truckhire.modules.payment.repository.PaymentTransactionRepository;
@@ -61,6 +63,9 @@ public class PaymentService {
     private final PaymentConfig paymentConfig;
     private final RazorpayGatewayAdapter razorpayAdapter;
     private final StripeGatewayAdapter stripeAdapter;
+
+    @Value("${app.base-url}")
+    private String baseUrl;
 
     // ═══════════════════════════════════════
     // INITIATE PAYMENT
@@ -213,8 +218,16 @@ public class PaymentService {
             txn.setStatus(PaymentStatus.SUCCEEDED);
             txn.setGatewayPaymentId(paymentIntentId);
             transactionRepository.save(txn);
-            confirmBooking(txn.getBooking().getId());
-            log.info("Stripe webhook: booking confirmed via webhook. piId={}", paymentIntentId);
+
+            // Only CHARGE triggers booking confirmation (PENDING -> AWAITING_APPROVAL).
+            // MILEAGE_TOPUP is collected after booking is already COMPLETED — no status change needed.
+            if (txn.getType() == PaymentType.CHARGE) {
+                confirmBooking(txn.getBooking().getId());
+                log.info("Stripe webhook: booking confirmed via webhook. piId={}", paymentIntentId);
+            } else {
+                log.info("Stripe webhook: mileage payment confirmed, booking unchanged. piId={}, type={}",
+                        paymentIntentId, txn.getType());
+            }
         });
     }
 
@@ -277,8 +290,8 @@ public class PaymentService {
      * - ownerAmount = totalAmount - platformFee
      *
      * Then initiates a transfer to the owner's linked gateway account.
-     * If the owner has no gateway account linked, logs a warning and skips
-     * (booking still completes — payout can be retried manually).
+     * If the owner has no gateway account linked, records a PAYOUT_PENDING transaction
+     * so the admin can see the pending payout and retry it via POST /admin/bookings/{id}/payout.
      */
     @Transactional
     public void initiateOwnerPayout(UUID bookingId) {
@@ -323,8 +336,19 @@ public class PaymentService {
         // Determine owner's gateway account ID
         String ownerGatewayId = resolveOwnerGatewayId(owner, charge.getGateway());
         if (ownerGatewayId == null) {
-            log.warn("Owner {} has no {} account linked — payout skipped. Booking {} is still COMPLETED.",
+            log.warn("Owner {} has no {} account linked — recording PAYOUT_PENDING. Booking {} is still COMPLETED.",
                     owner.getId(), charge.getGateway(), bookingId);
+            PaymentTransaction pendingTxn = PaymentTransaction.builder()
+                    .booking(booking)
+                    .gateway(charge.getGateway())
+                    .amount(ownerAmount)
+                    .platformFee(platformFee)
+                    .ownerAmount(ownerAmount)
+                    .currency(charge.getCurrency())
+                    .status(PaymentStatus.PAYOUT_PENDING)
+                    .type(PaymentType.PAYOUT)
+                    .build();
+            transactionRepository.save(pendingTxn);
             return;
         }
 
@@ -504,7 +528,7 @@ public class PaymentService {
                 contactId,
                 request.getAccountHolderName(),
                 request.getAccountNumber(),
-                request.getIfscCode());
+                request.getRoutingNumber());
 
         owner.setRazorpayFundAccountId(fundAccountId);
         userRepository.save(owner);
@@ -514,14 +538,88 @@ public class PaymentService {
     }
 
     // ═══════════════════════════════════════
+    // STRIPE CONNECT ONBOARDING
+    // ═══════════════════════════════════════
+
+    /**
+     * Step 1 of Stripe Connect onboarding: create a Connected Account (if not exists)
+     * and return a fresh Account Link (onboarding URL) for the owner to visit.
+     *
+     * IDEMPOTENCY: If the owner already has a stripeAccountId (started onboarding before),
+     * we reuse the existing account and generate a fresh Account Link.
+     * Stripe Account Links expire — they cannot be reused, but the account persists.
+     *
+     * The ownerId is encoded in the returnUrl as a query param so the return handler
+     * knows which user to update when Stripe redirects back.
+     */
+    @Transactional
+    public StripeConnectResponse initiateStripeConnect(UUID ownerId) {
+        User owner = userRepository.findById(ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", ownerId));
+
+        // Reuse existing Connected Account, or create a new one
+        String stripeAccountId = owner.getStripeAccountId();
+        if (stripeAccountId == null || stripeAccountId.isBlank()) {
+            stripeAccountId = stripeAdapter.createConnectedAccount(owner, baseUrl);
+            owner.setStripeAccountId(stripeAccountId);
+            userRepository.save(owner);
+            log.info("Stripe Connected Account created: ownerId={}, accountId={}", ownerId, stripeAccountId);
+        } else {
+            log.info("Reusing existing Stripe Connected Account: ownerId={}, accountId={}", ownerId, stripeAccountId);
+        }
+
+        // Build return and refresh URLs — ownerId in query param for the return handler
+        String returnUrl  = baseUrl + "/api/v1/stripe/connect/return?ownerId=" + ownerId;
+        String refreshUrl = baseUrl + "/api/v1/stripe/connect/refresh?ownerId=" + ownerId + "&accountId=" + stripeAccountId;
+
+        String onboardingUrl = stripeAdapter.createAccountLink(stripeAccountId, returnUrl, refreshUrl);
+        return StripeConnectResponse.builder().onboardingUrl(onboardingUrl).build();
+    }
+
+    /**
+     * Step 2 of Stripe Connect onboarding: called when Stripe redirects the owner back
+     * after completing (or abandoning) the onboarding flow.
+     *
+     * Verifies that the account has completed onboarding (chargesEnabled = true).
+     * The stripeAccountId was already saved in step 1 — this just confirms completion.
+     *
+     * NOTE: Stripe does NOT pass the account ID in the return URL automatically —
+     * we use the ownerId param to look up the user and check their stored stripeAccountId.
+     */
+    @Transactional
+    public boolean completeStripeConnect(UUID ownerId) {
+        User owner = userRepository.findById(ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", ownerId));
+
+        String stripeAccountId = owner.getStripeAccountId();
+        if (stripeAccountId == null || stripeAccountId.isBlank()) {
+            throw new BusinessException("STRIPE_CONNECT_ERROR",
+                    "No Stripe account found for this owner. Please restart onboarding.");
+        }
+
+        boolean complete = stripeAdapter.isAccountOnboardingComplete(stripeAccountId);
+        log.info("Stripe Connect return: ownerId={}, accountId={}, complete={}", ownerId, stripeAccountId, complete);
+        return complete;
+    }
+
+    // ═══════════════════════════════════════
     // PAYMENT STATUS QUERY
     // ═══════════════════════════════════════
 
     @Transactional(readOnly = true)
     public PaymentStatusResponse getPaymentStatus(UUID bookingId) {
-        // Return the most recent transaction for this booking (any type).
-        // After return, this will surface MILEAGE_TOPUP/PENDING so frontend knows to open checkout again.
-        // If no transaction exists yet (renter hasn't initiated payment), return NOT_INITIATED instead of 404.
+        // Priority: always surface MILEAGE_TOPUP/PENDING first if one exists.
+        // Without this, a PAYOUT created after the mileage order (e.g. admin triggers payout early)
+        // would overshadow the MILEAGE_TOPUP and the renter would never see the pay prompt.
+        Optional<PaymentTransaction> pendingMileage = transactionRepository
+                .findByBookingIdAndTypeAndStatus(bookingId, PaymentType.MILEAGE_TOPUP, PaymentStatus.PENDING);
+        if (pendingMileage.isPresent()) {
+            PaymentTransaction txn = pendingMileage.get();
+            return buildPaymentStatusResponse(bookingId, txn);
+        }
+
+        // Otherwise return the most recent transaction (any type).
+        // If no transaction exists yet, return NOT_INITIATED instead of 404.
         Optional<PaymentTransaction> txnOpt = transactionRepository
                 .findFirstByBookingIdOrderByCreatedAtDesc(bookingId);
 
@@ -532,7 +630,19 @@ public class PaymentService {
                     .build();
         }
 
-        PaymentTransaction txn = txnOpt.get();
+        return buildPaymentStatusResponse(bookingId, txnOpt.get());
+    }
+
+    private PaymentStatusResponse buildPaymentStatusResponse(UUID bookingId, PaymentTransaction txn) {
+        // For Stripe PENDING transactions, retrieve the clientSecret so mobile can open the payment sheet.
+        // This covers both initial CHARGE and MILEAGE_TOPUP flows — same pattern, no extra endpoint needed.
+        String clientSecret = null;
+        if (txn.getGateway() == PaymentGateway.STRIPE
+                && txn.getStatus() == PaymentStatus.PENDING
+                && txn.getGatewayOrderId() != null) {
+            clientSecret = stripeAdapter.getClientSecret(txn.getGatewayOrderId());
+        }
+
         return PaymentStatusResponse.builder()
                 .bookingId(bookingId.toString())
                 .status(txn.getStatus().name())
@@ -542,6 +652,7 @@ public class PaymentService {
                 .currency(txn.getCurrency())
                 .gatewayOrderId(txn.getGatewayOrderId())
                 .gatewayPaymentId(txn.getGatewayPaymentId())
+                .clientSecret(clientSecret)
                 .createdAt(txn.getCreatedAt() != null ? txn.getCreatedAt().toString() : null)
                 .updatedAt(txn.getUpdatedAt() != null ? txn.getUpdatedAt().toString() : null)
                 .build();
@@ -607,16 +718,34 @@ public class PaymentService {
                 .orElseThrow(() -> new com.truckhire.common.exception.ResourceNotFoundException(
                         "PaymentTransaction", "id", transactionId));
 
-        if (txn.getType() != PaymentType.CHARGE) {
+        if (txn.getType() != PaymentType.CHARGE && txn.getType() != PaymentType.MILEAGE_TOPUP) {
             throw new com.truckhire.common.exception.BusinessException(
-                    "INVALID_TRANSACTION_TYPE", "Invoice detail is only available for CHARGE transactions.");
+                    "INVALID_TRANSACTION_TYPE", "Invoice detail is only available for CHARGE or MILEAGE_TOPUP transactions.");
         }
 
         com.truckhire.modules.booking.entity.Booking booking = txn.getBooking();
         com.truckhire.modules.truck.entity.Truck truck = booking.getTruck();
         User renter = booking.getRenter();
+        User owner = booking.getOwner();
 
         PlatformSettings settings = platformSettingsService.getSettings();
+
+        // Build owner bank info — null if owner has not linked a bank account yet
+        com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.OwnerInfo ownerInfo = null;
+        if (owner.getBankAccountNumber() != null) {
+            String raw = owner.getBankAccountNumber();
+            String masked = raw.length() > 4
+                    ? "****" + raw.substring(raw.length() - 4)
+                    : "****";
+            ownerInfo = com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.OwnerInfo.builder()
+                    .fullname(owner.getFullname())
+                    .bankName(owner.getBankName())
+                    .accountNumber(masked)
+                    .routingNumber(owner.getBankRoutingNumber())
+                    .build();
+        }
+
+        boolean isMileage = txn.getType() == PaymentType.MILEAGE_TOPUP;
 
         return com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.builder()
                 .id(txn.getId().toString())
@@ -624,6 +753,7 @@ public class PaymentService {
                 .bookingNumber(booking.getBookingNumber())
                 .paymentDate(txn.getCreatedAt() != null ? txn.getCreatedAt().toString() : null)
                 .gateway(txn.getGateway().name())
+                .invoiceType(isMileage ? "MILEAGE" : "DAY_RATE")
                 .paymentStatus(txn.getStatus().name())
                 .settlementStatus(resolveSettlementStatus(txn))
                 .total(txn.getAmount())
@@ -636,6 +766,13 @@ public class PaymentService {
                 .transactionId(txn.getGatewayPaymentId())
                 .paymentMethod(txn.getPaymentMethod())
                 .cardLast4(txn.getCardLast4())
+                // Mileage breakdown — populated only for MILEAGE invoices
+                .milesDriven(isMileage ? booking.getOdometerEnd() != null && booking.getOdometerStart() != null
+                        ? booking.getOdometerEnd() - booking.getOdometerStart() : null : null)
+                .costPerMile(isMileage ? booking.getCostPerMile() : null)
+                .dayAmount(isMileage ? booking.getDayAmount() : null)
+                .mileageAmount(isMileage ? booking.getMileageAmount() : null)
+                .totalBookingAmount(isMileage ? booking.getTotalAmount() : null)
                 .booking(com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.BookingDetail.builder()
                         .id(booking.getId().toString())
                         .startDate(booking.getStartDate().toString())
@@ -650,6 +787,7 @@ public class PaymentService {
                                 .email(renter.getEmail())
                                 .phone(renter.getPhone())
                                 .build())
+                        .owner(ownerInfo)
                         .truck(com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.TruckInfo.builder()
                                 .model(truck.getModel())
                                 .pricePerDay(booking.getPricePerDay())
@@ -658,6 +796,23 @@ public class PaymentService {
                                 .build())
                         .build())
                 .build();
+    }
+
+    /**
+     * Payout shortcut by payment transaction ID.
+     * Looks up the transaction, extracts its booking ID, and delegates to initiateOwnerPayout.
+     * Used by POST /admin/payments/{id}/payout so the admin can trigger payout directly
+     * from the invoice detail page without needing to know the booking ID.
+     */
+    @Transactional
+    public void initiateOwnerPayoutByTransactionId(UUID transactionId) {
+        PaymentTransaction txn = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new ResourceNotFoundException("PaymentTransaction", "id", transactionId));
+        if (txn.getType() != PaymentType.CHARGE && txn.getType() != PaymentType.MILEAGE_TOPUP) {
+            throw new BusinessException("INVALID_TRANSACTION_TYPE",
+                    "Payout can only be initiated from a payment invoice (CHARGE or MILEAGE_TOPUP).");
+        }
+        initiateOwnerPayout(txn.getBooking().getId());
     }
 
     private com.truckhire.modules.payment.dto.AdminPaymentListResponse mapToAdminPaymentListResponse(
@@ -669,6 +824,7 @@ public class PaymentService {
                 .bookingNumber(booking.getBookingNumber())
                 .renterName(booking.getRenter().getFullname())
                 .paymentDate(txn.getCreatedAt() != null ? txn.getCreatedAt().toString() : null)
+                .invoiceType(txn.getType() == PaymentType.MILEAGE_TOPUP ? "MILEAGE" : "DAY_RATE")
                 .total(txn.getAmount())
                 .ownerShare(txn.getOwnerAmount())
                 .platformShare(txn.getPlatformFee())
@@ -728,18 +884,44 @@ public class PaymentService {
             PaymentTransaction txn) {
         com.truckhire.modules.booking.entity.Booking booking = txn.getBooking();
         com.truckhire.modules.truck.entity.Truck truck = booking.getTruck();
-        return com.truckhire.modules.payment.dto.MyPaymentHistoryResponse.builder()
+
+        com.truckhire.modules.payment.dto.MyPaymentHistoryResponse.MyPaymentHistoryResponseBuilder builder =
+                com.truckhire.modules.payment.dto.MyPaymentHistoryResponse.builder()
                 .id(txn.getId().toString())
                 .bookingId(booking.getId().toString())
                 .bookingNumber(booking.getBookingNumber())
+                .truckId(truck != null ? truck.getId().toString() : null)
                 .truckModel(truck != null ? truck.getModel() : null)
                 .amount(txn.getAmount())
                 .status(txn.getStatus().name())
                 .type(txn.getType().name())
                 .gateway(txn.getGateway().name())
                 .currency(txn.getCurrency())
-                .createdAt(txn.getCreatedAt() != null ? txn.getCreatedAt().toString() : null)
-                .build();
+                .createdAt(txn.getCreatedAt() != null ? txn.getCreatedAt().toString() : null);
+
+        // ── Owner-only enrichment — only for PAYOUT transactions ──
+        if (txn.getType() == PaymentType.PAYOUT) {
+            builder.startDate(booking.getStartDate() != null ? booking.getStartDate().toString() : null)
+                   .endDate(booking.getEndDate() != null ? booking.getEndDate().toString() : null)
+                   .failureReason(txn.getFailureReason());
+
+            // grossAmount — use booking.totalAmount if set (includes mileage + day rate),
+            // otherwise fall back to the CHARGE transaction amount (day rate only).
+            // totalAmount is set when booking transitions to COMPLETED (after odometer_end).
+            if (booking.getTotalAmount() != null) {
+                builder.grossAmount(booking.getTotalAmount());
+            } else {
+                transactionRepository.findByBookingIdAndTypeAndStatus(
+                        booking.getId(), PaymentType.CHARGE, PaymentStatus.SUCCEEDED)
+                        .ifPresent(charge -> builder.grossAmount(charge.getAmount()));
+            }
+
+            // platformFeePercent — from current platform settings
+            PlatformSettings settings = platformSettingsService.getSettings();
+            builder.platformFeePercent(settings.getPlatformFeePercent());
+        }
+
+        return builder.build();
     }
 
     private String resolveOwnerGatewayId(User owner, PaymentGateway gateway) {

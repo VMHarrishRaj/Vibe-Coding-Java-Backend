@@ -40,5 +40,6 @@ public class AuthResponse {
     @AllArgsConstructor
     public static class UserInfo {
         private String id;
+        private String role; // ADMIN / OWNER / RENTER — allows client to gate access immediately
     }
 }

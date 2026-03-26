@@ -228,6 +228,32 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             """)
     Page<Booking> searchByKeywordAndStatus(@Param("q") String q, @Param("status") BookingStatus status, Pageable pageable);
 
+    // Admin search — keyword + multiple statuses combined
+    @Query(value = """
+            SELECT b FROM Booking b
+            JOIN FETCH b.truck JOIN FETCH b.renter JOIN FETCH b.owner
+            WHERE b.deletedAt IS NULL
+              AND b.status IN :statuses
+              AND (LOWER(b.bookingNumber) LIKE :q
+                OR LOWER(b.renter.fullname) LIKE :q
+                OR LOWER(b.truck.model) LIKE :q
+                OR LOWER(b.truck.make) LIKE :q)
+            """,
+            countQuery = """
+            SELECT COUNT(b) FROM Booking b
+            JOIN b.truck JOIN b.renter JOIN b.owner
+            WHERE b.deletedAt IS NULL
+              AND b.status IN :statuses
+              AND (LOWER(b.bookingNumber) LIKE :q
+                OR LOWER(b.renter.fullname) LIKE :q
+                OR LOWER(b.truck.model) LIKE :q
+                OR LOWER(b.truck.make) LIKE :q)
+            """)
+    Page<Booking> searchByKeywordAndStatuses(
+            @Param("q") String q,
+            @Param("statuses") List<BookingStatus> statuses,
+            Pageable pageable);
+
     // Admin user detail: count ACTIVE + COMPLETED bookings per truck (batch — avoids N+1)
     @Query("""
             SELECT b.truck.id, COUNT(b)

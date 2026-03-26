@@ -22,15 +22,23 @@ public class AdminInvoiceDetailResponse {
     private String bookingNumber;
     private String paymentDate;
     private String gateway;
+    private String invoiceType;      // "DAY_RATE" or "MILEAGE"
     private String paymentStatus;
     private String settlementStatus;
 
     // Payment amounts
-    private BigDecimal total;
-    private BigDecimal ownerShare;
-    private BigDecimal platformShare;
+    private BigDecimal total;        // amount for this specific transaction
+    private BigDecimal ownerShare;   // owner_amount (null until payout initiated)
+    private BigDecimal platformShare;// platform_fee (null until payout initiated)
     private BigDecimal ownerSharePercent;
     private BigDecimal platformFeePercent;
+
+    // Mileage breakdown (populated only when invoiceType = "MILEAGE")
+    private Integer milesDriven;
+    private BigDecimal costPerMile;
+    private BigDecimal dayAmount;    // original day-rate charge for reference
+    private BigDecimal mileageAmount;// miles charge (milesDriven x costPerMile)
+    private BigDecimal totalBookingAmount; // dayAmount + mileageAmount = full booking cost
 
     // Card details — populated from Stripe webhook (null until wired)
     private String transactionId;    // gatewayPaymentId
@@ -55,6 +63,7 @@ public class AdminInvoiceDetailResponse {
         private BigDecimal tax;                     // null — future phase
 
         private RenterInfo renter;
+        private OwnerInfo owner;
         private TruckInfo truck;
     }
 
@@ -66,6 +75,17 @@ public class AdminInvoiceDetailResponse {
         private String fullname;
         private String email;
         private String phone;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class OwnerInfo {
+        private String fullname;
+        private String bankName;
+        private String accountNumber;   // masked: ****XXXX (last 4 digits only)
+        private String routingNumber;   // bank_ifsc_code / routing number
     }
 
     @Data

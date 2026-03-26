@@ -16,6 +16,6 @@ public class LinkBankAccountRequest {
     @NotBlank(message = "Account number is required")
     private String accountNumber;
 
-    @NotBlank(message = "IFSC code is required")
-    private String ifscCode;
+    @NotBlank(message = "Bank routing number is required")
+    private String routingNumber;
 }

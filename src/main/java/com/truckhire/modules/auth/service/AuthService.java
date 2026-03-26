@@ -166,7 +166,7 @@ public class AuthService {
                 .kycVerified(false)
                 .bankAccountName(original.getBankAccountName())
                 .bankAccountNumber(original.getBankAccountNumber())
-                .bankIfscCode(original.getBankIfscCode())
+                .bankRoutingNumber(original.getBankRoutingNumber())
                 .bankName(original.getBankName())
                 .build();
 
@@ -317,6 +317,7 @@ public class AuthService {
                 .expiresIn(jwtService.getAccessTokenExpirationSeconds())
                 .user(AuthResponse.UserInfo.builder()
                         .id(user.getId().toString())
+                        .role(user.getRole().getName())
                         .build())
                 .build();
     }

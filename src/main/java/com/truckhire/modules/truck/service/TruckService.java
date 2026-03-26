@@ -11,6 +11,7 @@ import com.truckhire.modules.owner.dto.OwnerDashboardResponse;
 import com.truckhire.modules.truck.dto.*;
 import com.truckhire.modules.truck.entity.*;
 import com.truckhire.modules.truck.repository.*;
+import com.truckhire.modules.payment.repository.PaymentTransactionRepository;
 import com.truckhire.modules.user.entity.DocumentType;
 import com.truckhire.modules.user.entity.Role;
 import com.truckhire.modules.user.entity.User;
@@ -64,6 +65,7 @@ public class TruckService {
     private final UserRepository userRepository;
     private final FileStorageService fileStorageService;
     private final BookingRepository bookingRepository;
+    private final PaymentTransactionRepository transactionRepository;
 
     // ═══════════════════════════════════════
     // OWNER OPERATIONS
@@ -274,7 +276,7 @@ public class TruckService {
         }
 
         long pendingBookings = bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.PENDING);
-        BigDecimal totalEarnings = bookingRepository.sumTotalAmountByOwnerIdAndCompleted(ownerId);
+        BigDecimal totalEarnings = transactionRepository.sumOwnerEarnings(ownerId);
 
         return OwnerDashboardResponse.builder()
                 .totalTrucks(approved + pending + rejected + inactive)
@@ -481,36 +483,30 @@ public class TruckService {
     // ═══════════════════════════════════════
 
     /**
-     * Admin: List all trucks, optionally filtered by status and/or free-text keyword.
+     * Admin: List all trucks, optionally filtered by status, vehicleType, and/or free-text keyword.
      * q searches: registrationNumber, model, make, owner name (case-insensitive LIKE).
+     * vehicleType: MINI / STANDARD / HEAVY (case-insensitive; matched against vehicleType.name).
      */
     @Transactional(readOnly = true)
-    public PagedResponse<TruckListResponse> getAllTrucks(String status, String q, Pageable pageable) {
-        Page<Truck> page;
-        boolean hasStatus = status != null && !status.isBlank();
-        boolean hasQ      = q != null && !q.isBlank();
-
+    public PagedResponse<TruckListResponse> getAllTrucks(String status, String vehicleType, String q, Pageable pageable) {
         TruckStatus truckStatus = null;
-        if (hasStatus) {
+        if (status != null && !status.isBlank()) {
             try {
                 truckStatus = TruckStatus.valueOf(status.toUpperCase());
             } catch (IllegalArgumentException e) {
                 // Unrecognized status — treat as no filter rather than erroring.
-                hasStatus = false;
             }
         }
 
-        if (hasQ) {
-            String keyword = "%" + q.toLowerCase().trim() + "%";
-            page = hasStatus
-                    ? truckRepository.searchByKeywordAndStatus(keyword, truckStatus, pageable)
-                    : truckRepository.searchByKeyword(keyword, pageable);
-        } else if (hasStatus) {
-            page = truckRepository.findByStatusActiveWithOwnerNoOrder(truckStatus, pageable);
-        } else {
-            page = truckRepository.findAllActiveWithOwner(pageable);
-        }
+        String normalizedVehicleType = (vehicleType != null && !vehicleType.isBlank())
+                ? vehicleType.toUpperCase().trim()
+                : null;
 
+        String keyword = (q != null && !q.isBlank())
+                ? "%" + q.toLowerCase().trim() + "%"
+                : null;
+
+        Page<Truck> page = truckRepository.adminSearchTrucks(truckStatus, normalizedVehicleType, keyword, pageable);
         return buildPagedResponse(page);
     }
 

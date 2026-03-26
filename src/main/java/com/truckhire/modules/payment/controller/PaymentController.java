@@ -5,6 +5,7 @@ import com.truckhire.common.dto.PagedResponse;
 import com.truckhire.common.util.SecurityUtils;
 import com.truckhire.modules.payment.dto.LinkBankAccountRequest;
 import com.truckhire.modules.payment.dto.MyPaymentHistoryResponse;
+import com.truckhire.modules.payment.dto.StripeConnectResponse;
 import com.truckhire.modules.payment.dto.PaymentInitiatedResponse;
 import com.truckhire.modules.payment.dto.PaymentStatusResponse;
 import com.truckhire.modules.payment.dto.VerifyPaymentRequest;
@@ -100,7 +101,7 @@ public class PaymentController {
                 request.getRazorpayPaymentId(),
                 request.getRazorpaySignature()
         );
-        return ResponseEntity.ok(ApiResponse.success("Mileage payment verified. Payout initiated.", null));
+        return ResponseEntity.ok(ApiResponse.success("Mileage payment verified. Admin will initiate owner payout.", null));
     }
 
     /**
@@ -130,5 +131,62 @@ public class PaymentController {
         UUID ownerId = SecurityUtils.getCurrentUser().getId();
         paymentService.linkOwnerBankAccount(ownerId, request);
         return ResponseEntity.ok(ApiResponse.success("Bank account linked to Razorpay successfully", null));
+    }
+
+    /**
+     * POST /owners/me/stripe/connect
+     *
+     * Step 1 of Stripe Connect onboarding. Creates a Stripe Connected Account
+     * (or reuses an existing one) and returns a hosted onboarding URL.
+     *
+     * Mobile opens the URL in the native browser. After the owner completes
+     * (or abandons) onboarding, Stripe redirects to GET /stripe/connect/return.
+     *
+     * Idempotent: safe to call multiple times — reuses the existing account and
+     * generates a fresh link each time.
+     */
+    @PostMapping("/owners/me/stripe/connect")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<ApiResponse<StripeConnectResponse>> initiateStripeConnect() {
+        UUID ownerId = SecurityUtils.getCurrentUser().getId();
+        StripeConnectResponse response = paymentService.initiateStripeConnect(ownerId);
+        return ResponseEntity.ok(ApiResponse.success("Stripe onboarding URL generated", response));
+    }
+
+    /**
+     * GET /stripe/connect/return
+     *
+     * Stripe redirects here after owner completes (or abandons) onboarding.
+     * PUBLIC endpoint — no JWT (Stripe drives this redirect, not the owner's app).
+     *
+     * Checks if onboarding is complete (chargesEnabled=true on the account).
+     * Returns a plain JSON response the mobile deep link handler can read,
+     * OR redirects to truckhire://stripe-connect/return for native app handling.
+     *
+     * ownerId param is set by us when building the returnUrl in PaymentService.
+     */
+    @GetMapping("/stripe/connect/return")
+    public ResponseEntity<ApiResponse<Void>> stripeConnectReturn(
+            @RequestParam UUID ownerId) {
+        boolean complete = paymentService.completeStripeConnect(ownerId);
+        String message = complete
+                ? "Stripe Connect onboarding complete. Payouts are now enabled."
+                : "Stripe Connect onboarding not yet complete. Please finish the setup in the Stripe dashboard.";
+        return ResponseEntity.ok(ApiResponse.success(message, null));
+    }
+
+    /**
+     * GET /stripe/connect/refresh
+     *
+     * Stripe redirects here when an Account Link expires before the owner completes onboarding.
+     * We generate a fresh onboarding link and redirect the owner back to Stripe.
+     * PUBLIC endpoint.
+     */
+    @GetMapping("/stripe/connect/refresh")
+    public ResponseEntity<ApiResponse<StripeConnectResponse>> stripeConnectRefresh(
+            @RequestParam UUID ownerId,
+            @RequestParam String accountId) {
+        StripeConnectResponse response = paymentService.initiateStripeConnect(ownerId);
+        return ResponseEntity.ok(ApiResponse.success("New Stripe onboarding link generated", response));
     }
 }

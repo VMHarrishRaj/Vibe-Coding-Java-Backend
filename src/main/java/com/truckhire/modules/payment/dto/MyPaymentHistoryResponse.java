@@ -15,6 +15,9 @@ import java.math.BigDecimal;
  *
  * The `type` field distinguishes CHARGE / REFUND / PAYOUT so the frontend
  * can render the appropriate badge/label without branching on role.
+ *
+ * Owner-only fields (null for RENTER): truckId, startDate, endDate,
+ * grossAmount, platformFeePercent, failureReason.
  */
 @Data
 @Builder
@@ -25,9 +28,15 @@ public class MyPaymentHistoryResponse {
     private String id;              // payment_transaction UUID
     private String bookingId;       // booking UUID
     private String bookingNumber;   // BK001, BK002...
+    private String truckId;         // truck UUID — for mobile deep-link; null for RENTER
     private String truckModel;      // e.g. "Tata 407" — null if truck deleted
-    private BigDecimal amount;      // charged to renter (CHARGE/REFUND) or paid to owner (PAYOUT)
+    private String startDate;       // booking start date (OWNER only)
+    private String endDate;         // booking end date (OWNER only)
+    private BigDecimal grossAmount; // what renter paid before fee deduction (OWNER only)
+    private BigDecimal platformFeePercent; // platform fee % at time of payout (OWNER only)
+    private BigDecimal amount;      // charged to renter (CHARGE/REFUND) or net paid to owner (PAYOUT)
     private String status;          // SUCCEEDED | REFUNDED | PENDING | FAILED | PAID_OUT | PAYOUT_PENDING
+    private String failureReason;   // populated when status is PAYOUT_PENDING or FAILED (OWNER only)
     private String type;            // CHARGE | REFUND | PAYOUT
     private String gateway;         // STRIPE | RAZORPAY
     private String currency;        // USD | INR

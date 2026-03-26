@@ -77,10 +77,9 @@ public class PaymentTransaction extends BaseAuditEntity {
     @Column(name = "owner_amount", precision = 12, scale = 2)
     private BigDecimal ownerAmount;
 
-    // Currency code at time of transaction — immutable
+    // Currency code at time of transaction — immutable; always set explicitly from platform_settings
     @Column(length = 3, nullable = false)
-    @Builder.Default
-    private String currency = "INR";
+    private String currency;
 
     @Enumerated(EnumType.STRING)
     @Column(length = 30, nullable = false)

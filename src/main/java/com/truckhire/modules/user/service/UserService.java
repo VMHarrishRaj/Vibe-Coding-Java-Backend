@@ -127,8 +127,8 @@ public class UserService {
         if (request.getBankAccountNumber() != null) {
             user.setBankAccountNumber(request.getBankAccountNumber());
         }
-        if (request.getBankIfscCode() != null) {
-            user.setBankIfscCode(request.getBankIfscCode());
+        if (request.getBankRoutingNumber() != null) {
+            user.setBankRoutingNumber(request.getBankRoutingNumber());
         }
         if (request.getBankName() != null) {
             user.setBankName(request.getBankName());
@@ -157,8 +157,8 @@ public class UserService {
         if (request.getBankAccountNumber() != null) {
             user.setBankAccountNumber(request.getBankAccountNumber());
         }
-        if (request.getBankIfscCode() != null) {
-            user.setBankIfscCode(request.getBankIfscCode());
+        if (request.getBankRoutingNumber() != null) {
+            user.setBankRoutingNumber(request.getBankRoutingNumber());
         }
         if (request.getBankName() != null) {
             user.setBankName(request.getBankName());
@@ -223,9 +223,23 @@ public class UserService {
             userPage = userRepository.findByDeletedAtIsNull(pageable);
         }
 
+        // Batch-load vehicle counts for all OWNER users on this page in a single query.
+        // Previously each owner triggered a separate COUNT query (N+1).
+        // Now: collect owner IDs → one GROUP BY query → build a lookup map → use in mapping.
+        List<UUID> ownerIds = userPage.getContent().stream()
+                .filter(u -> "OWNER".equals(u.getRole().getName()))
+                .map(User::getId)
+                .collect(Collectors.toList());
+
+        Map<UUID, Long> vehicleCountMap = new java.util.HashMap<>();
+        if (!ownerIds.isEmpty()) {
+            truckRepository.countTrucksByOwnerIds(ownerIds)
+                    .forEach(row -> vehicleCountMap.put((UUID) row[0], (Long) row[1]));
+        }
+
         return PagedResponse.<AdminUserListResponse>builder()
                 .content(userPage.getContent().stream()
-                        .map(this::mapToAdminListResponse)
+                        .map(u -> mapToAdminListResponse(u, vehicleCountMap))
                         .collect(Collectors.toList()))
                 .pageNumber(userPage.getNumber())
                 .pageSize(userPage.getSize())
@@ -457,6 +471,30 @@ public class UserService {
     }
 
     // ═══════════════════════════════════════
+    /**
+     * Change password for a logged-in user.
+     *
+     * Requires the current password to be correct before updating.
+     * This is separate from the forgot-password OTP flow — no email required.
+     *
+     * @param userId          The ID from SecurityContext
+     * @param request         currentPassword + newPassword
+     */
+    @Transactional
+    public void changePassword(UUID userId, ChangePasswordRequest request) {
+        User user = findActiveUserById(userId);
+
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
+            throw new BusinessException("INCORRECT_PASSWORD",
+                    "Current password is incorrect.");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+        log.info("Password changed by user: id={}", userId);
+    }
+
+    // ═══════════════════════════════════════
     // PRIVATE HELPERS
     // ═══════════════════════════════════════
 
@@ -508,19 +546,19 @@ public class UserService {
                 .profileImageUrl(user.getProfileImageUrl())
                 .bankAccountName(user.getBankAccountName())
                 .bankAccountNumber(user.getBankAccountNumber())
-                .bankIfscCode(user.getBankIfscCode())
+                .bankRoutingNumber(user.getBankRoutingNumber())
                 .bankName(user.getBankName())
+                .stripeConnected(user.getStripeAccountId() != null && !user.getStripeAccountId().isBlank())
                 .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null)
                 .build();
     }
 
     /**
      * Map User entity to condensed admin list response.
+     * vehicleCountMap is pre-loaded in bulk by the caller — no per-user DB query here.
      */
-    private AdminUserListResponse mapToAdminListResponse(User user) {
-        long vehicleCount = "OWNER".equals(user.getRole().getName())
-                ? truckRepository.countByOwnerIdAndDeletedAtIsNull(user.getId())
-                : 0L;
+    private AdminUserListResponse mapToAdminListResponse(User user, Map<UUID, Long> vehicleCountMap) {
+        long vehicleCount = vehicleCountMap.getOrDefault(user.getId(), 0L);
 
         return AdminUserListResponse.builder()
                 .id(user.getId().toString())

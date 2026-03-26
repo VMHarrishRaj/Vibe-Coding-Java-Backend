@@ -433,8 +433,7 @@ public class BookingService {
             } else if (statuses.size() == 1) {
                 page = bookingRepository.searchByKeywordAndStatus(keyword, statuses.get(0), pageable);
             } else {
-                // Multi-status search not yet implemented — fall back to keyword-only
-                page = bookingRepository.searchByKeyword(keyword, pageable);
+                page = bookingRepository.searchByKeywordAndStatuses(keyword, statuses, pageable);
             }
         } else {
             if (statuses.isEmpty()) {

@@ -100,7 +100,7 @@ app:
     refresh-token-expiration-ms: 604800000   # 7 days
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
-  base-url: ${APP_BASE_URL:http://localhost:8080}
+  base-url: ${APP_BASE_URL:http://localhost:8505}
   file-storage:
     upload-dir: ${FILE_UPLOAD_DIR:./uploads}
   payment:

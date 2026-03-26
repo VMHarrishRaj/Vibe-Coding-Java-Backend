@@ -55,11 +55,14 @@ public class UserProfileResponse {
     // ── Bank Details (for OWNER settlement payouts) ──
     private String bankAccountName;
     private String bankAccountNumber;
-    private String bankIfscCode;
+    private String bankRoutingNumber;
     private String bankName;
 
     // ── Metadata ──
     private String createdAt; // ISO timestamp — "member since"
+
+    // ── Gateway connection status (OWNER only — false for ADMIN/RENTER) ──
+    private boolean stripeConnected;  // true when stripeAccountId is set on the user
 
     // ── OWNER role only — null for ADMIN/RENTER ──
     private List<OwnedVehicleSummary> vehiclesOwned;

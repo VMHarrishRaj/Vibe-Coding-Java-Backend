@@ -103,7 +103,7 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
               AND (:minCapacity IS NULL OR t.capacityTons >= :minCapacity)
               AND t.id NOT IN (
                   SELECT b.truck.id FROM Booking b
-                  WHERE b.status IN ('PENDING', 'CONFIRMED', 'ACTIVE')
+                  WHERE b.status IN ('PENDING', 'AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE')
                     AND b.startDate <= :availableTo
                     AND b.endDate >= :availableFrom
               )
@@ -175,6 +175,38 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
             countQuery = "SELECT COUNT(t) FROM Truck t WHERE t.status = :status AND t.deletedAt IS NULL")
     Page<Truck> findByStatusActiveWithOwnerNoOrder(@Param("status") TruckStatus status, Pageable pageable);
 
+    /**
+     * Admin truck list — supports all three optional filters in one query:
+     * status, vehicleType, and free-text search keyword.
+     * Passing null for any param skips that filter.
+     * :q must be pre-lowercased by the caller (e.g. "%mini%"), or null to skip search.
+     */
+    @Query(value = """
+            SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType
+            WHERE t.deletedAt IS NULL
+              AND (:status IS NULL OR t.status = :status)
+              AND (:vehicleType IS NULL OR t.vehicleType.name = :vehicleType)
+              AND (:q IS NULL OR LOWER(t.registrationNumber) LIKE :q
+                             OR LOWER(t.model) LIKE :q
+                             OR LOWER(t.make) LIKE :q
+                             OR LOWER(t.owner.fullname) LIKE :q)
+            """,
+            countQuery = """
+            SELECT COUNT(t) FROM Truck t JOIN t.owner JOIN t.vehicleType
+            WHERE t.deletedAt IS NULL
+              AND (:status IS NULL OR t.status = :status)
+              AND (:vehicleType IS NULL OR t.vehicleType.name = :vehicleType)
+              AND (:q IS NULL OR LOWER(t.registrationNumber) LIKE :q
+                             OR LOWER(t.model) LIKE :q
+                             OR LOWER(t.make) LIKE :q
+                             OR LOWER(t.owner.fullname) LIKE :q)
+            """)
+    Page<Truck> adminSearchTrucks(
+            @Param("status") TruckStatus status,
+            @Param("vehicleType") String vehicleType,
+            @Param("q") String q,
+            Pageable pageable);
+
     @Query(value = "SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType WHERE t.status = :status AND t.deletedAt IS NULL ORDER BY t.createdAt DESC",
             countQuery = "SELECT COUNT(t) FROM Truck t WHERE t.status = :status AND t.deletedAt IS NULL")
     Page<Truck> findByStatusActiveWithOwner(@Param("status") TruckStatus status, Pageable pageable);
@@ -182,8 +214,12 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
     // Admin dashboard: total non-deleted trucks (all statuses)
     long countByDeletedAtIsNull();
 
-    // Admin user list: vehicle count per owner
+    // Admin user list: vehicle count per owner (single query, avoids N+1)
     long countByOwnerIdAndDeletedAtIsNull(UUID ownerId);
+
+    // Admin user list: batch vehicle counts for a list of owner IDs — one query for the whole page
+    @Query("SELECT t.owner.id, COUNT(t) FROM Truck t WHERE t.owner.id IN :ownerIds AND t.deletedAt IS NULL GROUP BY t.owner.id")
+    List<Object[]> countTrucksByOwnerIds(@Param("ownerIds") List<UUID> ownerIds);
 
     // Admin dashboard: count non-deleted trucks by a specific status
     long countByStatusAndDeletedAtIsNull(TruckStatus status);

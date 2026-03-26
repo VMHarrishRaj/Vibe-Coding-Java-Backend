@@ -5,7 +5,9 @@ import com.truckhire.common.dto.ApiResponse;
 import com.truckhire.modules.auth.security.JwtAuthFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import java.util.Arrays;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -48,6 +50,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
+    @Value("${app.cors.allowed-origins}")
+    private String allowedOrigins;
+
     private final JwtAuthFilter jwtAuthFilter;
     private final ObjectMapper objectMapper;
 
@@ -87,6 +92,9 @@ public class SecurityConfig {
 
                     // Payment: webhook receivers (no JWT — gateway calls these)
                     .requestMatchers("/payments/webhook/**").permitAll()
+
+                    // Stripe Connect return/refresh — Stripe drives these redirects, no JWT
+                    .requestMatchers("/stripe/connect/return", "/stripe/connect/refresh").permitAll()
 
                     // Payment: public config for frontend SDK initialization
                     .requestMatchers("/config/payment").permitAll()
@@ -136,10 +144,7 @@ public class SecurityConfig {
 
         CorsConfiguration config = new CorsConfiguration();
 
-        config.setAllowedOrigins(List.of(
-                "https://truckrent.g-axis.in",
-                "http://localhost:5173"
-        ));
+        config.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
 
         config.setAllowedMethods(List.of(
                 "GET",

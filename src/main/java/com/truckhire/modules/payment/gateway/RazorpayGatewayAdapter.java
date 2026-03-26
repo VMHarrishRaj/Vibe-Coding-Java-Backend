@@ -153,11 +153,11 @@ public class RazorpayGatewayAdapter implements GatewayPort {
      * number are accepted — no real bank validation occurs.
      */
     public String createFundAccount(String contactId, String accountHolderName,
-                                    String accountNumber, String ifscCode) {
+                                    String accountNumber, String routingNumber) {
         try {
             JSONObject bankAccount = new JSONObject();
             bankAccount.put("name", accountHolderName);
-            bankAccount.put("ifsc", ifscCode);
+            bankAccount.put("ifsc", routingNumber);  // Razorpay API field name is "ifsc"
             bankAccount.put("account_number", accountNumber);
 
             JSONObject body = new JSONObject();

@@ -101,8 +101,8 @@ public class User extends BaseAuditEntity {
     @Column(name = "bank_account_number", length = 50)
     private String bankAccountNumber;
 
-    @Column(name = "bank_ifsc_code", length = 20)
-    private String bankIfscCode;
+    @Column(name = "bank_ifsc_code", length = 50)
+    private String bankRoutingNumber;
 
     @Column(name = "bank_name", length = 255)
     private String bankName;
