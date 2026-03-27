@@ -28,7 +28,7 @@ import java.util.UUID;
  * GET /admin/trucks/pending → List pending-approval trucks
  */
 @RestController
-@RequestMapping("/api/v1/admin/trucks")
+@RequestMapping("/admin/trucks")
 @PreAuthorize("hasRole('ADMIN')")
 @RequiredArgsConstructor
 public class AdminTruckController {

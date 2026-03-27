@@ -23,7 +23,7 @@ import java.util.UUID;
  * Base mapping: /admin/bookings
  */
 @RestController
-@RequestMapping("/api/v1/admin/bookings")
+@RequestMapping("/admin/bookings")
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminBookingController {

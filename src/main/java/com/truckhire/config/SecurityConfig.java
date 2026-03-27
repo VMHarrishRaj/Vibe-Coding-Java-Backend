@@ -77,34 +77,34 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                     // Public APIs
-                    .requestMatchers("/api/v1/auth/**").permitAll()
-                    .requestMatchers("/api/v1/health").permitAll()
+                    .requestMatchers("/auth/**").permitAll()
+                    .requestMatchers("/health").permitAll()
                     .requestMatchers("/actuator/health").permitAll()
 
                     // Swagger
                     .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
 
                     // Public file access
-                    .requestMatchers("/api/v1/files/trucks/**").permitAll()
+                    .requestMatchers("/files/trucks/**").permitAll()
 
                     // Enum values for frontend dropdowns (public)
-                    .requestMatchers("/api/v1/config/enums").permitAll()
+                    .requestMatchers("/config/enums").permitAll()
 
                     // Payment: webhook receivers (no JWT — gateway calls these)
-                    .requestMatchers("/api/v1/payments/webhook/**").permitAll()
+                    .requestMatchers("/payments/webhook/**").permitAll()
 
                     // Stripe Connect return/refresh — Stripe drives these redirects, no JWT
-                    .requestMatchers("/api/v1/stripe/connect/return", "/api/v1/stripe/connect/refresh").permitAll()
+                    .requestMatchers("/stripe/connect/return", "/stripe/connect/refresh").permitAll()
 
                     // Payment: public config for frontend SDK initialization
-                    .requestMatchers("/api/v1/config/payment").permitAll()
+                    .requestMatchers("/config/payment").permitAll()
 
                     // Public document type lookups (used by frontend before login to show KYC requirements)
-                    .requestMatchers("/api/v1/users/document-types/**").permitAll()
+                    .requestMatchers("/users/document-types/**").permitAll()
 
                     // Truck availability APIs
-                    .requestMatchers("/api/v1/trucks/*/booked-dates").permitAll()
-                    .requestMatchers("/api/v1/trucks/*/availability").permitAll()
+                    .requestMatchers("/trucks/*/booked-dates").permitAll()
+                    .requestMatchers("/trucks/*/availability").permitAll()
 
                     // All other APIs require authentication
                     .anyRequest().authenticated()

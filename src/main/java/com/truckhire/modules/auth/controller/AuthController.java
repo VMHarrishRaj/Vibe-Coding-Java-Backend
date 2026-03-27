@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * No JWT required for any endpoint in this controller.
  */
 @RestController
-@RequestMapping("/api/v1/auth")
+@RequestMapping("/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
