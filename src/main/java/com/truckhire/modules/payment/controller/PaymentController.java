@@ -39,7 +39,7 @@ public class PaymentController {
      * Initiate payment for a booking.
      * Returns the gateway-specific payload the frontend needs to open the payment SDK.
      */
-    @PostMapping("/bookings/{id}/pay")
+    @PostMapping("/api/v1/bookings/{id}/pay")
     @PreAuthorize("hasRole('RENTER')")
     public ResponseEntity<ApiResponse<PaymentInitiatedResponse>> initiatePayment(
             @PathVariable UUID id) {
@@ -52,7 +52,7 @@ public class PaymentController {
      * Verify Razorpay payment signature (Razorpay flow only).
      * Frontend calls this after Razorpay Checkout returns payment_id + signature.
      */
-    @PostMapping("/payments/verify")
+    @PostMapping("/api/v1/payments/verify")
     @PreAuthorize("hasRole('RENTER')")
     public ResponseEntity<ApiResponse<Void>> verifyPayment(
             @Valid @RequestBody VerifyPaymentRequest request) {
@@ -68,7 +68,7 @@ public class PaymentController {
      * Get payment status for a booking.
      * Accessible by the renter or owner of the booking.
      */
-    @GetMapping("/bookings/{id}/payment")
+    @GetMapping("/api/v1/bookings/{id}/payment")
     @PreAuthorize("hasAnyRole('RENTER', 'OWNER', 'ADMIN')")
     public ResponseEntity<ApiResponse<PaymentStatusResponse>> getPaymentStatus(
             @PathVariable UUID id) {
@@ -81,7 +81,7 @@ public class PaymentController {
      * Frontend uses this to initialize the correct payment SDK before the user
      * even reaches the payment screen.
      */
-    @GetMapping("/config/payment")
+    @GetMapping("/api/v1/config/payment")
     public ResponseEntity<ApiResponse<com.truckhire.modules.payment.dto.PlatformSettingsResponse>> getPaymentConfig() {
         var config = platformSettingsService.getSettingsResponse();
         return ResponseEntity.ok(ApiResponse.success("Payment config retrieved", config));
@@ -92,7 +92,7 @@ public class PaymentController {
      * Called after renter completes the second Razorpay Checkout for mileage charges.
      * On success, triggers owner payout.
      */
-    @PostMapping("/payments/verify-mileage")
+    @PostMapping("/api/v1/payments/verify-mileage")
     @PreAuthorize("hasRole('RENTER')")
     public ResponseEntity<ApiResponse<Void>> verifyMileagePayment(
             @Valid @RequestBody VerifyPaymentRequest request) {
@@ -110,7 +110,7 @@ public class PaymentController {
      * OWNER:  returns their PAYOUT transactions (earnings received per booking).
      * Role is resolved from the JWT automatically.
      */
-    @GetMapping("/payments/mine")
+    @GetMapping("/api/v1/payments/mine")
     @PreAuthorize("hasAnyRole('RENTER', 'OWNER')")
     public ResponseEntity<ApiResponse<PagedResponse<MyPaymentHistoryResponse>>> getMyPayments(
             @PageableDefault(size = 50) Pageable pageable) {
@@ -124,7 +124,7 @@ public class PaymentController {
      * Creates a Razorpay Contact (if not already linked) + Fund Account.
      * Required before any payout can be made to the owner.
      */
-    @PostMapping("/owners/me/razorpay/link-account")
+    @PostMapping("/api/v1/owners/me/razorpay/link-account")
     @PreAuthorize("hasRole('OWNER')")
     public ResponseEntity<ApiResponse<Void>> linkRazorpayAccount(
             @Valid @RequestBody LinkBankAccountRequest request) {
@@ -145,7 +145,7 @@ public class PaymentController {
      * Idempotent: safe to call multiple times — reuses the existing account and
      * generates a fresh link each time.
      */
-    @PostMapping("/owners/me/stripe/connect")
+    @PostMapping("/api/v1/owners/me/stripe/connect")
     @PreAuthorize("hasRole('OWNER')")
     public ResponseEntity<ApiResponse<StripeConnectResponse>> initiateStripeConnect() {
         UUID ownerId = SecurityUtils.getCurrentUser().getId();
@@ -165,7 +165,7 @@ public class PaymentController {
      *
      * ownerId param is set by us when building the returnUrl in PaymentService.
      */
-    @GetMapping("/stripe/connect/return")
+    @GetMapping("/api/v1/stripe/connect/return")
     public ResponseEntity<ApiResponse<Void>> stripeConnectReturn(
             @RequestParam UUID ownerId) {
         boolean complete = paymentService.completeStripeConnect(ownerId);
@@ -182,7 +182,7 @@ public class PaymentController {
      * We generate a fresh onboarding link and redirect the owner back to Stripe.
      * PUBLIC endpoint.
      */
-    @GetMapping("/stripe/connect/refresh")
+    @GetMapping("/api/v1/stripe/connect/refresh")
     public ResponseEntity<ApiResponse<StripeConnectResponse>> stripeConnectRefresh(
             @RequestParam UUID ownerId,
             @RequestParam String accountId) {

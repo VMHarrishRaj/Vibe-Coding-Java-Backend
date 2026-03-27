@@ -41,7 +41,7 @@ import java.util.UUID;
  * AUTH: All endpoints require ADMIN role.
  */
 @RestController
-@RequestMapping("/admin/users")
+@RequestMapping("/api/v1/admin/users")
 @PreAuthorize("hasRole('ADMIN')")
 @RequiredArgsConstructor
 public class AdminUserController {

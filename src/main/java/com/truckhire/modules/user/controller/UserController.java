@@ -34,7 +34,7 @@ import java.util.Map;
  * KycService).
  */
 @RestController
-@RequestMapping("/users")
+@RequestMapping("/api/v1/users")
 @RequiredArgsConstructor
 public class UserController {
 

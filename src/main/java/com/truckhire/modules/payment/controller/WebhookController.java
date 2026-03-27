@@ -30,7 +30,7 @@ import java.nio.charset.StandardCharsets;
  */
 @Slf4j
 @RestController
-@RequestMapping("/payments/webhook")
+@RequestMapping("/api/v1/payments/webhook")
 @RequiredArgsConstructor
 public class WebhookController {
 

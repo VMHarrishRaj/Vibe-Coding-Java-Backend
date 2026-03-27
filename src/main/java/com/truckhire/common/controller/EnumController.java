@@ -18,7 +18,7 @@ import java.util.Map;
  * always use the same enum values.
  */
 @RestController
-@RequestMapping("/config")
+@RequestMapping("/api/v1/config")
 public class EnumController {
 
     @GetMapping("/enums")

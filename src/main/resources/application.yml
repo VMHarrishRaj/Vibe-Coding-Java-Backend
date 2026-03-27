@@ -77,8 +77,6 @@ spring:
 # ── Server ──
 server:
   port: 8505  # Changed from 8080 — required for VM deployment (port 8080 conflicts with auth proxy)
-  servlet:
-    context-path: /api/v1
 
 # ── Actuator (Health Checks) ──
 management:

@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  * GET /owner/dashboard → Summary of trucks, bookings, earnings
  */
 @RestController
-@RequestMapping("/owner")
+@RequestMapping("/api/v1/owner")
 @RequiredArgsConstructor
 public class OwnerController {
 

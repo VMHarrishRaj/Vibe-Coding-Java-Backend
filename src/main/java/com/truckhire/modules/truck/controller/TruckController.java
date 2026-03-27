@@ -39,7 +39,7 @@ import java.util.UUID;
  * GET /trucks/{id}/documents → List truck documents (Any)
  */
 @RestController
-@RequestMapping("/trucks")
+@RequestMapping("/api/v1/trucks")
 @RequiredArgsConstructor
 public class TruckController {
 
