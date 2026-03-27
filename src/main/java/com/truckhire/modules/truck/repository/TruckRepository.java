@@ -175,36 +175,82 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
             countQuery = "SELECT COUNT(t) FROM Truck t WHERE t.status = :status AND t.deletedAt IS NULL")
     Page<Truck> findByStatusActiveWithOwnerNoOrder(@Param("status") TruckStatus status, Pageable pageable);
 
-    /**
-     * Admin truck list — supports all three optional filters in one query:
-     * status, vehicleType, and free-text search keyword.
-     * Passing null for any param skips that filter.
-     * :q must be pre-lowercased by the caller (e.g. "%mini%"), or null to skip search.
-     */
+    // ── Admin vehicleType-aware queries (SCRUM-68 fix applied to admin path) ──
+    // Nullable-guard pattern (:param IS NULL OR ...) is unreliable in Hibernate 6 /
+    // PostgreSQL for relationship fields (t.vehicleType.name). Each method below
+    // hard-codes exactly which filters apply — no nullable guards for vehicleType.
+
+    // vehicleType only (no status, no keyword) — derived query is safe here because
+    // Spring Data resolves VehicleType.name via the JOIN implicitly.
+    Page<Truck> findByVehicleTypeNameAndDeletedAtIsNull(String vehicleTypeName, Pageable pageable);
+
+    // vehicleType + status (no keyword)
     @Query(value = """
             SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType
             WHERE t.deletedAt IS NULL
-              AND (:status IS NULL OR t.status = :status)
-              AND (:vehicleType IS NULL OR t.vehicleType.name = :vehicleType)
-              AND (:q IS NULL OR LOWER(t.registrationNumber) LIKE :q
-                             OR LOWER(t.model) LIKE :q
-                             OR LOWER(t.make) LIKE :q
-                             OR LOWER(t.owner.fullname) LIKE :q)
+              AND t.status = :status
+              AND t.vehicleType.name = :vehicleType
+            """,
+            countQuery = """
+            SELECT COUNT(t) FROM Truck t JOIN t.vehicleType
+            WHERE t.deletedAt IS NULL
+              AND t.status = :status
+              AND t.vehicleType.name = :vehicleType
+            """)
+    Page<Truck> findByStatusAndVehicleType(
+            @Param("status") TruckStatus status,
+            @Param("vehicleType") String vehicleType,
+            Pageable pageable);
+
+    // vehicleType + keyword (no status)
+    @Query(value = """
+            SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType
+            WHERE t.deletedAt IS NULL
+              AND t.vehicleType.name = :vehicleType
+              AND (LOWER(t.registrationNumber) LIKE :q
+                OR LOWER(t.model) LIKE :q
+                OR LOWER(t.make) LIKE :q
+                OR LOWER(t.owner.fullname) LIKE :q)
             """,
             countQuery = """
             SELECT COUNT(t) FROM Truck t JOIN t.owner JOIN t.vehicleType
             WHERE t.deletedAt IS NULL
-              AND (:status IS NULL OR t.status = :status)
-              AND (:vehicleType IS NULL OR t.vehicleType.name = :vehicleType)
-              AND (:q IS NULL OR LOWER(t.registrationNumber) LIKE :q
-                             OR LOWER(t.model) LIKE :q
-                             OR LOWER(t.make) LIKE :q
-                             OR LOWER(t.owner.fullname) LIKE :q)
+              AND t.vehicleType.name = :vehicleType
+              AND (LOWER(t.registrationNumber) LIKE :q
+                OR LOWER(t.model) LIKE :q
+                OR LOWER(t.make) LIKE :q
+                OR LOWER(t.owner.fullname) LIKE :q)
             """)
-    Page<Truck> adminSearchTrucks(
+    Page<Truck> searchByKeywordAndVehicleType(
+            @Param("q") String q,
+            @Param("vehicleType") String vehicleType,
+            Pageable pageable);
+
+    // vehicleType + status + keyword (all three filters)
+    @Query(value = """
+            SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType
+            WHERE t.deletedAt IS NULL
+              AND t.status = :status
+              AND t.vehicleType.name = :vehicleType
+              AND (LOWER(t.registrationNumber) LIKE :q
+                OR LOWER(t.model) LIKE :q
+                OR LOWER(t.make) LIKE :q
+                OR LOWER(t.owner.fullname) LIKE :q)
+            """,
+            countQuery = """
+            SELECT COUNT(t) FROM Truck t JOIN t.owner JOIN t.vehicleType
+            WHERE t.deletedAt IS NULL
+              AND t.status = :status
+              AND t.vehicleType.name = :vehicleType
+              AND (LOWER(t.registrationNumber) LIKE :q
+                OR LOWER(t.model) LIKE :q
+                OR LOWER(t.make) LIKE :q
+                OR LOWER(t.owner.fullname) LIKE :q)
+            """)
+    Page<Truck> searchByKeywordAndStatusAndVehicleType(
+            @Param("q") String q,
             @Param("status") TruckStatus status,
             @Param("vehicleType") String vehicleType,
-            @Param("q") String q,
             Pageable pageable);
 
     @Query(value = "SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType WHERE t.status = :status AND t.deletedAt IS NULL ORDER BY t.createdAt DESC",

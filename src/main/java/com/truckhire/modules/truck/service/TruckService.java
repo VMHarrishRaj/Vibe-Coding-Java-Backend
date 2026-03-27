@@ -506,7 +506,29 @@ public class TruckService {
                 ? "%" + q.toLowerCase().trim() + "%"
                 : null;
 
-        Page<Truck> page = truckRepository.adminSearchTrucks(truckStatus, normalizedVehicleType, keyword, pageable);
+        boolean hasStatus = truckStatus != null;
+        boolean hasVehicleType = normalizedVehicleType != null;
+        boolean hasKeyword = keyword != null;
+
+        Page<Truck> page;
+        if (!hasStatus && !hasVehicleType && !hasKeyword) {
+            page = truckRepository.findAllActiveWithOwner(pageable);
+        } else if (hasStatus && !hasVehicleType && !hasKeyword) {
+            page = truckRepository.findByStatusActiveWithOwnerNoOrder(truckStatus, pageable);
+        } else if (!hasStatus && hasVehicleType && !hasKeyword) {
+            page = truckRepository.findByVehicleTypeNameAndDeletedAtIsNull(normalizedVehicleType, pageable);
+        } else if (hasStatus && hasVehicleType && !hasKeyword) {
+            page = truckRepository.findByStatusAndVehicleType(truckStatus, normalizedVehicleType, pageable);
+        } else if (!hasStatus && !hasVehicleType && hasKeyword) {
+            page = truckRepository.searchByKeyword(keyword, pageable);
+        } else if (hasStatus && !hasVehicleType && hasKeyword) {
+            page = truckRepository.searchByKeywordAndStatus(keyword, truckStatus, pageable);
+        } else if (!hasStatus && hasVehicleType && hasKeyword) {
+            page = truckRepository.searchByKeywordAndVehicleType(keyword, normalizedVehicleType, pageable);
+        } else {
+            // hasStatus && hasVehicleType && hasKeyword
+            page = truckRepository.searchByKeywordAndStatusAndVehicleType(keyword, truckStatus, normalizedVehicleType, pageable);
+        }
         return buildPagedResponse(page);
     }
 
