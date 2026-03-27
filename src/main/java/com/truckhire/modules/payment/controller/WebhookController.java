@@ -14,8 +14,12 @@ import com.truckhire.modules.payment.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONObject;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 /**
  * WebhookController — handles incoming webhook events from Razorpay and Stripe.
@@ -101,13 +105,19 @@ public class WebhookController {
      */
     @PostMapping("/stripe")
     public ResponseEntity<String> stripeWebhook(
-            @RequestBody String payload,
-            @RequestHeader(value = "Stripe-Signature", required = false) String signature) {
+            HttpServletRequest request,
+            @RequestHeader(value = "Stripe-Signature", required = false) String signature) throws IOException {
 
         if (signature == null) {
             log.warn("Stripe webhook received without signature — rejected");
             return ResponseEntity.badRequest().body("Missing signature");
         }
+
+        // Read raw bytes directly — bypasses Spring's StringHttpMessageConverter charset logic.
+        // When behind nginx, Content-Type rewriting can cause Spring to decode the body as
+        // ISO-8859-1 instead of UTF-8, corrupting the bytes Stripe signed. Reading the raw
+        // InputStream and decoding explicitly as UTF-8 is nginx-proof.
+        String payload = new String(request.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         Event event;
         try {

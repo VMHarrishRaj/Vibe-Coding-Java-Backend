@@ -18,7 +18,7 @@ spring:
   # Active profile: controls which application-{profile}.yml is loaded
   # Override with: SPRING_PROFILES_ACTIVE=prod (env variable)
   profiles:
-    active: local
+    active: ${SPRING_PROFILES_ACTIVE:local}
 
   # ── JPA / Hibernate ──
   jpa:
