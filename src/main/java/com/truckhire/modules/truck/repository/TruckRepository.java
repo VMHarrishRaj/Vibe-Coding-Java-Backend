@@ -180,9 +180,20 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
     // PostgreSQL for relationship fields (t.vehicleType.name). Each method below
     // hard-codes exactly which filters apply — no nullable guards for vehicleType.
 
-    // vehicleType only (no status, no keyword) — derived query is safe here because
-    // Spring Data resolves VehicleType.name via the JOIN implicitly.
-    Page<Truck> findByVehicleTypeNameAndDeletedAtIsNull(String vehicleTypeName, Pageable pageable);
+    // vehicleType only (no status, no keyword)
+    @Query(value = """
+            SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType
+            WHERE t.deletedAt IS NULL
+              AND t.vehicleType.name = :vehicleType
+            """,
+            countQuery = """
+            SELECT COUNT(t) FROM Truck t JOIN t.vehicleType
+            WHERE t.deletedAt IS NULL
+              AND t.vehicleType.name = :vehicleType
+            """)
+    Page<Truck> findByVehicleTypeNameAndDeletedAtIsNull(
+            @Param("vehicleType") String vehicleType,
+            Pageable pageable);
 
     // vehicleType + status (no keyword)
     @Query(value = """
