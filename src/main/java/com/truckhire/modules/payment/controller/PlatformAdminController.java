@@ -30,6 +30,7 @@ import java.util.UUID;
  * before funds are released to the owner.
  */
 @RestController
+@RequestMapping
 @PreAuthorize("hasRole('ADMIN')")
 @RequiredArgsConstructor
 public class PlatformAdminController {

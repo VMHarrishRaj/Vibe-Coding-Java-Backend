@@ -29,6 +29,7 @@ import java.util.UUID;
  * GET  /config/payment        — Public endpoint for frontend SDK config
  */
 @RestController
+@RequestMapping
 @RequiredArgsConstructor
 public class PaymentController {
 
