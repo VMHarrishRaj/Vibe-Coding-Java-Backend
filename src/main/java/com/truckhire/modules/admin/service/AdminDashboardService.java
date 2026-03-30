@@ -31,7 +31,8 @@ public class AdminDashboardService {
         BigDecimal totalRevenue = bookingRepository.sumTotalRevenueCompleted();
         long activeBookings = bookingRepository.countByStatusAndDeletedAtIsNull(BookingStatus.ACTIVE);
         long totalVehicles = truckRepository.countByDeletedAtIsNull();
-        long totalClients = userRepository.countByRole_NameAndDeletedAtIsNull("RENTER");
+        long totalClients = userRepository.countByRole_NameAndDeletedAtIsNull("RENTER")
+                + userRepository.countByRole_NameAndDeletedAtIsNull("OWNER");
 
         // ── Booking Status widget ──
         long ongoingBookings = bookingRepository.countByStatusAndDeletedAtIsNull(BookingStatus.ACTIVE);
