@@ -144,7 +144,9 @@ public class SecurityConfig {
 
         CorsConfiguration config = new CorsConfiguration();
 
-        config.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
+        config.setAllowedOrigins(Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .collect(java.util.stream.Collectors.toList()));
 
         config.setAllowedMethods(List.of(
                 "GET",
