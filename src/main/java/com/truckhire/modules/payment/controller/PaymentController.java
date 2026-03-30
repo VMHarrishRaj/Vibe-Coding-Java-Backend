@@ -34,7 +34,6 @@ import java.util.UUID;
 public class PaymentController {
 
     private final PaymentService paymentService;
-    private final com.truckhire.modules.payment.service.PlatformSettingsService platformSettingsService;
 
     /**
      * Initiate payment for a booking.
@@ -75,17 +74,6 @@ public class PaymentController {
             @PathVariable UUID id) {
         PaymentStatusResponse response = paymentService.getPaymentStatus(id);
         return ResponseEntity.ok(ApiResponse.success("Payment status retrieved", response));
-    }
-
-    /**
-     * Public endpoint: returns active gateway, currency, and public key.
-     * Frontend uses this to initialize the correct payment SDK before the user
-     * even reaches the payment screen.
-     */
-    @GetMapping("/config/payment")
-    public ResponseEntity<ApiResponse<com.truckhire.modules.payment.dto.PlatformSettingsResponse>> getPaymentConfig() {
-        var config = platformSettingsService.getSettingsResponse();
-        return ResponseEntity.ok(ApiResponse.success("Payment config retrieved", config));
     }
 
     /**
