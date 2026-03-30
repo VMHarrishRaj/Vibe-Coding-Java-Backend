@@ -1,6 +1,9 @@
 package com.truckhire.common.controller;
 
 import com.truckhire.common.dto.ApiResponse;
+import com.truckhire.modules.payment.dto.PlatformSettingsResponse;
+import com.truckhire.modules.payment.service.PlatformSettingsService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,7 +22,15 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/config")
+@RequiredArgsConstructor
 public class EnumController {
+
+    private final PlatformSettingsService platformSettingsService;
+
+    @GetMapping("/payment")
+    public ApiResponse<PlatformSettingsResponse> getPaymentConfig() {
+        return ApiResponse.success("Payment config retrieved", platformSettingsService.getSettingsResponse());
+    }
 
     @GetMapping("/enums")
     public ApiResponse<Map<String, List<String>>> getEnums() {
