@@ -96,4 +96,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     // Admin dashboard: count non-deleted users by role name
     long countByRole_NameAndDeletedAtIsNull(String roleName);
+
+    // Admin dashboard: count active (non-deleted) users by role name and status
+    long countByRole_NameAndStatusAndDeletedAtIsNull(String roleName, UserStatus status);
 }

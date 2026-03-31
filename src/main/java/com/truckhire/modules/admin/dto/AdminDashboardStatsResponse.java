@@ -17,6 +17,7 @@ public class AdminDashboardStatsResponse {
     private long activeBookings;
     private long totalVehicles;
     private long totalClients;
+    private long activeOwnerCount;
 
     // Booking Status widget
     private long ongoingBookings;

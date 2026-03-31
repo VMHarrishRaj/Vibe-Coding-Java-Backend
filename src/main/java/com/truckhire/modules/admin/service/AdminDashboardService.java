@@ -6,6 +6,7 @@ import com.truckhire.modules.admin.dto.AdminDashboardStatsResponse;
 import com.truckhire.modules.admin.dto.AdminRevenueChartResponse;
 import com.truckhire.modules.admin.dto.AdminRevenueChartResponse.MonthlyRevenue;
 import com.truckhire.modules.booking.entity.BookingStatus;
+import com.truckhire.modules.user.entity.UserStatus;
 import com.truckhire.modules.booking.repository.BookingRepository;
 import com.truckhire.modules.truck.entity.TruckStatus;
 import com.truckhire.modules.truck.repository.TruckRepository;
@@ -33,6 +34,7 @@ public class AdminDashboardService {
         long totalVehicles = truckRepository.countByDeletedAtIsNull();
         long totalClients = userRepository.countByRole_NameAndDeletedAtIsNull("RENTER")
                 + userRepository.countByRole_NameAndDeletedAtIsNull("OWNER");
+        long activeOwnerCount = userRepository.countByRole_NameAndStatusAndDeletedAtIsNull("OWNER", UserStatus.ACTIVE);
 
         // ── Booking Status widget ──
         long ongoingBookings = bookingRepository.countByStatusAndDeletedAtIsNull(BookingStatus.ACTIVE);
@@ -57,6 +59,7 @@ public class AdminDashboardService {
                 .activeBookings(activeBookings)
                 .totalVehicles(totalVehicles)
                 .totalClients(totalClients)
+                .activeOwnerCount(activeOwnerCount)
                 .ongoingBookings(ongoingBookings)
                 .completedBookings(completedBookings)
                 .upcomingBookings(upcomingBookings)
