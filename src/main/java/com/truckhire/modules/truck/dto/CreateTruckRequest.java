@@ -1,5 +1,6 @@
 package com.truckhire.modules.truck.dto;
 
+import com.truckhire.modules.truck.entity.FuelType;
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -56,4 +57,12 @@ public class CreateTruckRequest {
     private Integer capacityTons;
     private String torque;
     private String description;
+
+    // ── Extended fields (optional) ──
+    private Integer year;
+    private String color;
+    private FuelType fuelType;
+
+    @Size(max = 17, message = "VIN number must not exceed 17 characters")
+    private String vinNumber;
 }

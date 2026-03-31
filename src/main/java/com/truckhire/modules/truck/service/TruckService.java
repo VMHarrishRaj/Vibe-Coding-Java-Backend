@@ -110,6 +110,10 @@ public class TruckService {
                 .capacityTons(request.getCapacityTons())
                 .torque(request.getTorque())
                 .description(request.getDescription())
+                .year(request.getYear())
+                .color(request.getColor())
+                .fuelType(request.getFuelType())
+                .vinNumber(request.getVinNumber())
                 .status(TruckStatus.PENDING_APPROVAL)
                 .build();
 
@@ -164,6 +168,14 @@ public class TruckService {
             truck.setTorque(request.getTorque());
         if (request.getDescription() != null)
             truck.setDescription(request.getDescription());
+        if (request.getYear() != null)
+            truck.setYear(request.getYear());
+        if (request.getColor() != null)
+            truck.setColor(request.getColor());
+        if (request.getFuelType() != null)
+            truck.setFuelType(request.getFuelType());
+        if (request.getVinNumber() != null)
+            truck.setVinNumber(request.getVinNumber());
 
         Truck saved = truckRepository.save(truck);
         log.info("Truck updated: id={}", truckId);
@@ -652,6 +664,10 @@ public class TruckService {
                 .capacityTons(truck.getCapacityTons())
                 .torque(truck.getTorque())
                 .mileageTotal(truck.getMileageTotal())
+                .year(truck.getYear())
+                .color(truck.getColor())
+                .fuelType(truck.getFuelType() != null ? truck.getFuelType().name() : null)
+                .vinNumber(truck.getVinNumber())
                 .status(truck.getStatus().name())
                 .rejectionReason(truck.getRejectionReason())
                 .description(truck.getDescription())
