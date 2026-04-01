@@ -22,10 +22,26 @@ public class TruckListResponse {
     private String model;
     private String make;
     private BigDecimal pricePerDay;
+    private BigDecimal costPerMile;
     private String locationCity;
+    private Double latitude;
+    private Double longitude;
     private Integer capacityTons;
     private String status;
+    private String description;
+
+    // Specs
+    private Integer year;
+    private String color;
+    private String fuelType;
+    private String vinNumber;
+
+    // Owner
+    private String ownerId;
     private String ownerName;
+    private String ownerPhone;
+    private String ownerEmail;
+
     private String createdAt;
     private String coverPhotoUrl;       // nullable — first PHOTO document URL, null if no photos uploaded
 

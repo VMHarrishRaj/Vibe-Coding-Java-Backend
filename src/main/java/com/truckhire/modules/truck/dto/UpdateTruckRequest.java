@@ -20,6 +20,11 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 public class UpdateTruckRequest {
 
+    private String vehicleType; // "MINI", "STANDARD", "HEAVY"
+
+    @Size(max = 50, message = "Registration number must not exceed 50 characters")
+    private String registrationNumber;
+
     @Size(max = 255, message = "Model must not exceed 255 characters")
     private String model;
 

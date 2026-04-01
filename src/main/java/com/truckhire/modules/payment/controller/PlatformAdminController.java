@@ -81,14 +81,26 @@ public class PlatformAdminController {
     }
 
     /**
+     * POST /admin/bookings/{id}/refund — admin manually issues a refund for a booking.
+     * Can be used regardless of booking status — useful for dispute resolution.
+     * Guards: booking must exist, a SUCCEEDED CHARGE must exist, no prior refund.
+     */
+    @PostMapping("/admin/bookings/{id}/refund")
+    public ResponseEntity<ApiResponse<Void>> adminRefundBooking(@PathVariable("id") UUID bookingId) {
+        paymentService.adminRefundBooking(bookingId);
+        return ResponseEntity.ok(ApiResponse.success("Refund issued successfully", null));
+    }
+
+    /**
      * GET /admin/payments — paginated list of all CHARGE transactions (invoices).
      * Supports optional free-text search on invoice number or booking number.
      */
     @GetMapping("/admin/payments")
     public ResponseEntity<ApiResponse<PagedResponse<AdminPaymentListResponse>>> getAdminPayments(
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) String settlementStatus,
             @PageableDefault(size = 20) Pageable pageable) {
-        PagedResponse<AdminPaymentListResponse> response = paymentService.getAdminPayments(search, pageable);
+        PagedResponse<AdminPaymentListResponse> response = paymentService.getAdminPayments(search, settlementStatus, pageable);
         return ResponseEntity.ok(ApiResponse.success("Payments retrieved", response));
     }
 

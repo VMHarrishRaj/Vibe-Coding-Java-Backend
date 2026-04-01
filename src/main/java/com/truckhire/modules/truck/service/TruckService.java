@@ -148,6 +148,22 @@ public class TruckService {
     public TruckResponse updateTruck(UUID ownerId, UUID truckId, UpdateTruckRequest request) {
         Truck truck = findTruckOwnedBy(truckId, ownerId);
 
+        if (request.getVehicleType() != null) {
+            VehicleType vehicleType = vehicleTypeRepository
+                    .findByName(request.getVehicleType().toUpperCase())
+                    .orElseThrow(() -> new BusinessException("INVALID_VEHICLE_TYPE",
+                            "Invalid vehicle type: " + request.getVehicleType()));
+            truck.setVehicleType(vehicleType);
+        }
+        if (request.getRegistrationNumber() != null) {
+            String newRegNum = request.getRegistrationNumber().toUpperCase().trim();
+            if (!newRegNum.equals(truck.getRegistrationNumber()) &&
+                    truckRepository.existsByRegistrationNumberAndDeletedAtIsNull(newRegNum)) {
+                throw new BusinessException("REGISTRATION_NUMBER_TAKEN",
+                        "A truck with this registration number already exists");
+            }
+            truck.setRegistrationNumber(newRegNum);
+        }
         if (request.getModel() != null)
             truck.setModel(request.getModel().trim());
         if (request.getMake() != null)
@@ -652,6 +668,8 @@ public class TruckService {
                 .id(truck.getId().toString())
                 .ownerId(truck.getOwner().getId().toString())
                 .ownerName(truck.getOwner().getFullname())
+                .ownerPhone(truck.getOwner().getPhone())
+                .ownerEmail(truck.getOwner().getEmail())
                 .vehicleType(truck.getVehicleType().getName())
                 .registrationNumber(truck.getRegistrationNumber())
                 .model(truck.getModel())
@@ -706,10 +724,21 @@ public class TruckService {
                 .model(truck.getModel())
                 .make(truck.getMake())
                 .pricePerDay(truck.getPricePerDay())
+                .costPerMile(truck.getCostPerMile())
                 .locationCity(truck.getLocationCity())
+                .latitude(truck.getLatitude())
+                .longitude(truck.getLongitude())
                 .capacityTons(truck.getCapacityTons())
+                .description(truck.getDescription())
+                .year(truck.getYear())
+                .color(truck.getColor())
+                .fuelType(truck.getFuelType() != null ? truck.getFuelType().name() : null)
+                .vinNumber(truck.getVinNumber())
                 .status(truck.getStatus().name())
+                .ownerId(truck.getOwner().getId().toString())
                 .ownerName(truck.getOwner().getFullname())
+                .ownerPhone(truck.getOwner().getPhone())
+                .ownerEmail(truck.getOwner().getEmail())
                 .createdAt(truck.getCreatedAt() != null ? truck.getCreatedAt().toString() : null)
                 .coverPhotoUrl(coverPhotoUrl)
                 .build();

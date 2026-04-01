@@ -29,6 +29,8 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
 
     boolean existsByBookingIdAndTypeAndStatusIn(UUID bookingId, PaymentType type, java.util.List<PaymentStatus> statuses);
 
+    boolean existsByBookingIdAndType(UUID bookingId, PaymentType type);
+
     /**
      * Admin payments list — CHARGE + MILEAGE_TOPUP transactions, with booking + renter eagerly loaded.
      * Each row is one invoice entry: day-rate charge OR mileage charge.
@@ -58,6 +60,40 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
               AND (:q IS NULL OR LOWER(t.invoiceNumber) LIKE :q OR LOWER(b.bookingNumber) LIKE :q)
             """)
     Page<PaymentTransaction> searchChargesWithDetails(@Param("q") String q, Pageable pageable);
+
+    @Query(value = """
+            SELECT t FROM PaymentTransaction t
+            JOIN FETCH t.booking b
+            JOIN FETCH b.renter
+            WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND t.status = :status
+            ORDER BY t.createdAt DESC
+            """,
+            countQuery = """
+            SELECT COUNT(t) FROM PaymentTransaction t JOIN t.booking b
+            WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND t.status = :status
+            """)
+    Page<PaymentTransaction> findChargesByStatus(
+            @Param("status") PaymentStatus status, Pageable pageable);
+
+    @Query(value = """
+            SELECT t FROM PaymentTransaction t
+            JOIN FETCH t.booking b
+            JOIN FETCH b.renter
+            WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND t.status = :status
+              AND (:q IS NULL OR LOWER(t.invoiceNumber) LIKE :q OR LOWER(b.bookingNumber) LIKE :q)
+            ORDER BY t.createdAt DESC
+            """,
+            countQuery = """
+            SELECT COUNT(t) FROM PaymentTransaction t JOIN t.booking b
+            WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND t.status = :status
+              AND (:q IS NULL OR LOWER(t.invoiceNumber) LIKE :q OR LOWER(b.bookingNumber) LIKE :q)
+            """)
+    Page<PaymentTransaction> searchChargesByStatus(
+            @Param("q") String q, @Param("status") PaymentStatus status, Pageable pageable);
 
     // Get next invoice sequence value
     @Query(value = "SELECT nextval('invoice_seq')", nativeQuery = true)

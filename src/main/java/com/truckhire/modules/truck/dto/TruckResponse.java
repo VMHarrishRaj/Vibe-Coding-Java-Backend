@@ -19,6 +19,8 @@ public class TruckResponse {
     private String id;
     private String ownerId;
     private String ownerName;
+    private String ownerPhone;
+    private String ownerEmail;
 
     // ── Classification ──
     private String vehicleType;

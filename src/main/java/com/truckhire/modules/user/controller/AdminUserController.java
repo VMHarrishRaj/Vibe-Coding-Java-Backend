@@ -58,9 +58,10 @@ public class AdminUserController {
             @RequestParam(required = false) String role,
             @RequestParam(required = false) String status,
             @RequestParam(name = "search", required = false) String q,
+            @RequestParam(required = false) String stripeConnected,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
 
-        PagedResponse<AdminUserListResponse> users = userService.getAllUsers(role, status, q, pageable);
+        PagedResponse<AdminUserListResponse> users = userService.getAllUsers(role, status, q, stripeConnected, pageable);
         return ResponseEntity.ok(ApiResponse.success("Users retrieved", users));
     }
 
@@ -71,6 +72,23 @@ public class AdminUserController {
     public ResponseEntity<ApiResponse<UserProfileResponse>> getUserById(@PathVariable UUID id) {
         UserProfileResponse user = userService.getAdminUserDetail(id);
         return ResponseEntity.ok(ApiResponse.success("User retrieved", user));
+    }
+
+    /**
+     * DELETE /api/v1/admin/users/{id}
+     *
+     * Soft-deletes a user. Sets deleted_at — user is invisible to all queries.
+     * Admin cannot delete themselves.
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<ApiResponse<Void>> deleteUser(@PathVariable UUID id) {
+        User admin = SecurityUtils.getCurrentUser();
+        if (admin.getId().equals(id)) {
+            throw new com.truckhire.common.exception.BusinessException(
+                    "CANNOT_DELETE_SELF", "You cannot delete your own account");
+        }
+        userService.deleteUser(id);
+        return ResponseEntity.ok(ApiResponse.success("User deleted", null));
     }
 
     /**

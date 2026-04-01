@@ -279,6 +279,59 @@ public class PaymentService {
     }
 
     // ═══════════════════════════════════════
+    // MANUAL REFUND (ADMIN-INITIATED)
+    // ═══════════════════════════════════════
+
+    /**
+     * Admin manually issues a refund for a booking, independent of cancellation flow.
+     *
+     * Guards:
+     * - Booking must exist
+     * - A SUCCEEDED CHARGE must exist (otherwise nothing to refund)
+     * - A REFUND transaction must not already exist (idempotency guard)
+     */
+    @Transactional
+    public void adminRefundBooking(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking", "id", bookingId));
+
+        Optional<PaymentTransaction> chargeOpt = transactionRepository
+                .findByBookingIdAndTypeAndStatus(bookingId, PaymentType.CHARGE, PaymentStatus.SUCCEEDED);
+
+        if (chargeOpt.isEmpty()) {
+            throw new BusinessException("NO_PAYMENT_TO_REFUND",
+                    "No succeeded payment found for this booking — nothing to refund");
+        }
+
+        boolean alreadyRefunded = transactionRepository
+                .existsByBookingIdAndType(bookingId, PaymentType.REFUND);
+        if (alreadyRefunded) {
+            throw new BusinessException("ALREADY_REFUNDED",
+                    "A refund has already been issued for this booking");
+        }
+
+        PaymentTransaction charge = chargeOpt.get();
+        GatewayPort adapter = selectAdapter(charge.getGateway());
+        String refundId = adapter.refund(charge.getGatewayPaymentId(), charge.getAmount(), charge.getCurrency());
+
+        PaymentTransaction refundTxn = PaymentTransaction.builder()
+                .booking(booking)
+                .gateway(charge.getGateway())
+                .gatewayTransferId(refundId)
+                .amount(charge.getAmount())
+                .currency(charge.getCurrency())
+                .status(PaymentStatus.SUCCEEDED)
+                .type(PaymentType.REFUND)
+                .build();
+        transactionRepository.save(refundTxn);
+
+        charge.setStatus(PaymentStatus.REFUNDED);
+        transactionRepository.save(charge);
+
+        log.info("Admin manual refund completed: bookingId={}, refundId={}", bookingId, refundId);
+    }
+
+    // ═══════════════════════════════════════
     // OWNER PAYOUT (CALLED ON BOOKING COMPLETED)
     // ═══════════════════════════════════════
 
@@ -687,12 +740,30 @@ public class PaymentService {
 
     @Transactional(readOnly = true)
     public com.truckhire.common.dto.PagedResponse<com.truckhire.modules.payment.dto.AdminPaymentListResponse>
-            getAdminPayments(String search, org.springframework.data.domain.Pageable pageable) {
+            getAdminPayments(String search, String settlementStatus, org.springframework.data.domain.Pageable pageable) {
 
         org.springframework.data.domain.Page<PaymentTransaction> page;
-        if (search != null && !search.isBlank()) {
+        boolean hasSearch = search != null && !search.isBlank();
+        boolean hasStatus = settlementStatus != null && !settlementStatus.isBlank();
+
+        PaymentStatus statusFilter = null;
+        if (hasStatus) {
+            try {
+                statusFilter = PaymentStatus.valueOf(settlementStatus.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                // Unrecognized status — treat as no filter
+                hasStatus = false;
+            }
+        }
+
+        if (hasSearch && hasStatus) {
+            String q = "%" + search.toLowerCase().trim() + "%";
+            page = transactionRepository.searchChargesByStatus(q, statusFilter, pageable);
+        } else if (hasSearch) {
             String q = "%" + search.toLowerCase().trim() + "%";
             page = transactionRepository.searchChargesWithDetails(q, pageable);
+        } else if (hasStatus) {
+            page = transactionRepository.findChargesByStatus(statusFilter, pageable);
         } else {
             page = transactionRepository.findAllChargesWithDetails(pageable);
         }
