@@ -9,6 +9,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * Request DTO for updating a truck — PUT /trucks/{id}
@@ -53,4 +54,10 @@ public class UpdateTruckRequest {
 
     @Size(max = 17, message = "VIN number must not exceed 17 characters")
     private String vinNumber;
+
+    // Multiple pickup cities (SCRUM-87/88).
+    // null  = no change to existing pickup locations
+    // []    = remove all pickup locations
+    // [...] = replace all pickup locations with this list
+    private List<String> pickupLocations;
 }

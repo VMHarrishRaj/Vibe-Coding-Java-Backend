@@ -904,6 +904,118 @@ public class PaymentService {
                 .build();
     }
 
+    // ═══════════════════════════════════════
+    // GROUPED INVOICE VIEW (BY BOOKING)
+    // ═══════════════════════════════════════
+
+    /**
+     * Returns one row per booking combining the CHARGE txn with its optional MILEAGE_TOPUP.
+     * Supports the same search + settlementStatus filters as the flat invoice list.
+     */
+    @Transactional(readOnly = true)
+    public com.truckhire.common.dto.PagedResponse<com.truckhire.modules.payment.dto.AdminBookingInvoiceResponse>
+            getAdminPaymentsByBooking(String search, String settlementStatus,
+                                     org.springframework.data.domain.Pageable pageable) {
+
+        boolean hasSearch = search != null && !search.isBlank();
+        boolean hasStatus = settlementStatus != null && !settlementStatus.isBlank();
+
+        PaymentStatus statusFilter = null;
+        if (hasStatus) {
+            try {
+                statusFilter = PaymentStatus.valueOf(settlementStatus.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                hasStatus = false;
+            }
+        }
+
+        org.springframework.data.domain.Page<PaymentTransaction> page;
+        if (hasSearch && hasStatus) {
+            String q = "%" + search.toLowerCase().trim() + "%";
+            page = transactionRepository.searchChargeOnlyByStatus(q, statusFilter, pageable);
+        } else if (hasSearch) {
+            String q = "%" + search.toLowerCase().trim() + "%";
+            page = transactionRepository.searchChargeOnlyWithDetails(q, pageable);
+        } else if (hasStatus) {
+            page = transactionRepository.findChargeOnlyByStatus(statusFilter, pageable);
+        } else {
+            page = transactionRepository.findAllChargeOnlyWithDetails(pageable);
+        }
+
+        // Batch-fetch mileage transactions for all bookings on this page
+        java.util.List<java.util.UUID> bookingIds = page.getContent().stream()
+                .map(t -> t.getBooking().getId())
+                .collect(java.util.stream.Collectors.toList());
+
+        java.util.Map<java.util.UUID, PaymentTransaction> mileageByBookingId = new java.util.HashMap<>();
+        if (!bookingIds.isEmpty()) {
+            transactionRepository.findMileageByBookingIds(bookingIds)
+                    .forEach(m -> mileageByBookingId.put(m.getBooking().getId(), m));
+        }
+
+        java.util.List<com.truckhire.modules.payment.dto.AdminBookingInvoiceResponse> content =
+                page.getContent().stream()
+                        .map(charge -> mapToBookingInvoiceResponse(charge, mileageByBookingId.get(charge.getBooking().getId())))
+                        .collect(java.util.stream.Collectors.toList());
+
+        return com.truckhire.common.dto.PagedResponse.<com.truckhire.modules.payment.dto.AdminBookingInvoiceResponse>builder()
+                .content(content)
+                .pageNumber(page.getNumber())
+                .pageSize(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .last(page.isLast())
+                .build();
+    }
+
+    private com.truckhire.modules.payment.dto.AdminBookingInvoiceResponse mapToBookingInvoiceResponse(
+            PaymentTransaction charge, PaymentTransaction mileage) {
+
+        com.truckhire.modules.booking.entity.Booking booking = charge.getBooking();
+        User renter = booking.getRenter();
+
+        boolean hasMileage = mileage != null;
+        java.math.BigDecimal mileageAmount = hasMileage ? mileage.getAmount() : null;
+        java.math.BigDecimal totalAmount = hasMileage
+                ? charge.getAmount().add(mileage.getAmount())
+                : charge.getAmount();
+
+        java.math.BigDecimal ownerShare = charge.getOwnerAmount() != null ? charge.getOwnerAmount() : java.math.BigDecimal.ZERO;
+        java.math.BigDecimal platformShare = charge.getPlatformFee() != null ? charge.getPlatformFee() : java.math.BigDecimal.ZERO;
+        if (hasMileage) {
+            if (mileage.getOwnerAmount() != null) ownerShare = ownerShare.add(mileage.getOwnerAmount());
+            if (mileage.getPlatformFee() != null) platformShare = platformShare.add(mileage.getPlatformFee());
+        }
+
+        // Payment status: derived from charge + optional mileage txn statuses
+        String paymentStatus;
+        if (charge.getStatus() != PaymentStatus.SUCCEEDED) {
+            paymentStatus = "PENDING";
+        } else if (hasMileage && mileage.getStatus() != PaymentStatus.SUCCEEDED) {
+            paymentStatus = "PARTIALLY_PAID";
+        } else {
+            paymentStatus = "FULLY_PAID";
+        }
+
+        return com.truckhire.modules.payment.dto.AdminBookingInvoiceResponse.builder()
+                .bookingId(booking.getId().toString())
+                .bookingNumber(booking.getBookingNumber())
+                .renterName(renter != null ? renter.getFullname() : null)
+                .chargeInvoiceNumber(charge.getInvoiceNumber())
+                .mileageInvoiceNumber(hasMileage ? mileage.getInvoiceNumber() : null)
+                .paymentDate(charge.getCreatedAt() != null ? charge.getCreatedAt().toString() : null)
+                .gateway(charge.getGateway() != null ? charge.getGateway().name() : null)
+                .dayAmount(charge.getAmount())
+                .mileageAmount(mileageAmount)
+                .totalAmount(totalAmount)
+                .ownerShare(ownerShare)
+                .platformShare(platformShare)
+                .paymentStatus(paymentStatus)
+                .settlementStatus(resolveSettlementStatus(charge))
+                .hasMileage(hasMileage)
+                .build();
+    }
+
     private String resolveSettlementStatus(PaymentTransaction txn) {
         // Check if there's a payout transaction for this booking
         Optional<PaymentTransaction> payout = transactionRepository

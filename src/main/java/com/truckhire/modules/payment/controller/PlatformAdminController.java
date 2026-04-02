@@ -3,6 +3,7 @@ package com.truckhire.modules.payment.controller;
 import com.truckhire.common.dto.ApiResponse;
 import com.truckhire.common.dto.PagedResponse;
 import com.truckhire.common.util.SecurityUtils;
+import com.truckhire.modules.payment.dto.AdminBookingInvoiceResponse;
 import com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse;
 import com.truckhire.modules.payment.dto.AdminPaymentListResponse;
 import com.truckhire.modules.payment.dto.PlatformSettingsRequest;
@@ -102,6 +103,20 @@ public class PlatformAdminController {
             @PageableDefault(size = 20) Pageable pageable) {
         PagedResponse<AdminPaymentListResponse> response = paymentService.getAdminPayments(search, settlementStatus, pageable);
         return ResponseEntity.ok(ApiResponse.success("Payments retrieved", response));
+    }
+
+    /**
+     * GET /admin/payments/by-booking — one row per booking, combining CHARGE + MILEAGE_TOPUP totals.
+     * Supports same search and settlementStatus filters as the flat invoice list.
+     */
+    @GetMapping("/admin/payments/by-booking")
+    public ResponseEntity<ApiResponse<PagedResponse<AdminBookingInvoiceResponse>>> getAdminPaymentsByBooking(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String settlementStatus,
+            @PageableDefault(size = 20) Pageable pageable) {
+        PagedResponse<AdminBookingInvoiceResponse> response =
+                paymentService.getAdminPaymentsByBooking(search, settlementStatus, pageable);
+        return ResponseEntity.ok(ApiResponse.success("Booking invoices retrieved", response));
     }
 
     /**

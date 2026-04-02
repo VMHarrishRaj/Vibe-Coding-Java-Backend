@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * Response DTO for full truck detail — GET /trucks/{id}
@@ -50,6 +51,9 @@ public class TruckResponse {
     private String status; // "PENDING_APPROVAL", "APPROVED", "REJECTED", "INACTIVE"
     private String rejectionReason;
     private String description;
+
+    // ── Pickup Locations ──
+    private List<String> pickupLocations;  // multiple pickup cities (SCRUM-87/88); empty if none set
 
     // ── Metadata ──
     private String createdAt;

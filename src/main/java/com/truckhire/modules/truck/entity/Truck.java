@@ -6,6 +6,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -99,4 +101,8 @@ public class Truck extends BaseAuditEntity {
 
     @Column(name = "vin_number", length = 17)
     private String vinNumber;
+
+    @OneToMany(mappedBy = "truck", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<PickupLocation> pickupLocations = new ArrayList<>();
 }

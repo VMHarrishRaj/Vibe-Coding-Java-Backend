@@ -1,7 +1,7 @@
 package com.truckhire.modules.truck.entity;
 
 public enum FuelType {
-    PETROL,
+    GASOLINE,
     DIESEL,
     ELECTRIC,
     HYBRID
