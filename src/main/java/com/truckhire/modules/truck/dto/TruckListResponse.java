@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * Condensed truck DTO for list/search views.
@@ -22,12 +23,32 @@ public class TruckListResponse {
     private String model;
     private String make;
     private BigDecimal pricePerDay;
+    private BigDecimal costPerMile;
     private String locationCity;
+    private Double latitude;
+    private Double longitude;
     private Integer capacityTons;
     private String status;
+    private String description;
+
+    // Specs
+    private Integer year;
+    private String color;
+    private String fuelType;
+    private String vinNumber;
+
+    // Owner
+    private String ownerId;
     private String ownerName;
+    private String ownerPhone;
+    private String ownerEmail;
+
     private String createdAt;
-    private String coverPhotoUrl;       // nullable — first PHOTO document URL, null if no photos uploaded
+    private String coverPhotoUrl;
+    private List<String> pickupLocations;  // multiple pickup cities (SCRUM-87/88); empty if none set       // nullable — first PHOTO document URL, null if no photos uploaded
+
+    /** True when the owner has attached an active insurance plan */
+    private boolean insured;
 
     // Availability enrichment (Phase 5 — populated in public search)
     private String availabilityStatus;  // "AVAILABLE", "RENTED", "UNAVAILABLE"

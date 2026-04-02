@@ -4,6 +4,7 @@ import com.truckhire.common.dto.PagedResponse;
 import com.truckhire.common.email.EmailSender;
 import com.truckhire.common.exception.BusinessException;
 import com.truckhire.common.exception.ResourceNotFoundException;
+import com.truckhire.common.storage.FileStorageService;
 import com.truckhire.modules.auth.dto.AuthResponse;
 import com.truckhire.modules.auth.service.JwtService;
 import com.truckhire.modules.user.dto.*;
@@ -17,11 +18,13 @@ import com.truckhire.modules.user.repository.RoleRepository;
 import com.truckhire.modules.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -60,11 +63,15 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserService {
 
+    @Value("${app.base-url}")
+    private String baseUrl;
+
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final EmailSender emailSender;
+    private final FileStorageService fileStorageService;
     private final TruckRepository truckRepository;
     private final BookingRepository bookingRepository;
 
@@ -186,7 +193,16 @@ public class UserService {
      */
     @Transactional(readOnly = true)
     public PagedResponse<AdminUserListResponse> getAllUsers(
-            String role, String status, String q, Pageable pageable) {
+            String role, String status, String q, String stripeConnected, Pageable pageable) {
+
+        // stripeConnected filter — short-circuit entire query branch
+        if (stripeConnected != null && !stripeConnected.isBlank()) {
+            boolean connected = Boolean.parseBoolean(stripeConnected);
+            Page<User> scPage = connected
+                    ? userRepository.findOwnersWithStripeConnected(pageable)
+                    : userRepository.findOwnersWithoutStripeConnected(pageable);
+            return buildAdminUserPagedResponse(scPage);
+        }
 
         Page<User> userPage;
         boolean hasRole   = role != null && !role.isBlank();
@@ -223,9 +239,10 @@ public class UserService {
             userPage = userRepository.findByDeletedAtIsNull(pageable);
         }
 
-        // Batch-load vehicle counts for all OWNER users on this page in a single query.
-        // Previously each owner triggered a separate COUNT query (N+1).
-        // Now: collect owner IDs → one GROUP BY query → build a lookup map → use in mapping.
+        return buildAdminUserPagedResponse(userPage);
+    }
+
+    private PagedResponse<AdminUserListResponse> buildAdminUserPagedResponse(Page<User> userPage) {
         List<UUID> ownerIds = userPage.getContent().stream()
                 .filter(u -> "OWNER".equals(u.getRole().getName()))
                 .map(User::getId)
@@ -500,6 +517,39 @@ public class UserService {
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
         log.info("Password changed by user: id={}", userId);
+    }
+
+    /**
+     * Upload or replace the authenticated user's profile photo.
+     * Stores file under uploads/users/{userId}/ and updates profileImageUrl on the user.
+     */
+    @Transactional
+    public UserProfileResponse uploadProfilePhoto(UUID userId, MultipartFile file) {
+        User user = findActiveUserById(userId);
+        String filePath = fileStorageService.storeFile(file, "users/" + userId);
+        user.setProfileImageUrl(baseUrl + "/api/v1/files/" + filePath);
+        userRepository.save(user);
+        log.info("Profile photo uploaded: userId={}", userId);
+        return mapToProfileResponse(user);
+    }
+
+    /**
+     * Admin: Soft-delete a user by ID.
+     * Sets deleted_at timestamp — user is hidden from all queries that filter deletedAt IS NULL.
+     * Cannot delete the currently authenticated admin (guard in controller).
+     */
+    @Transactional
+    public void deleteUser(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+
+        if (user.isDeleted()) {
+            throw new BusinessException("USER_ALREADY_DELETED", "User has already been deleted");
+        }
+
+        user.softDelete();
+        userRepository.save(user);
+        log.info("User soft-deleted by admin: id={}", userId);
     }
 
     // ═══════════════════════════════════════

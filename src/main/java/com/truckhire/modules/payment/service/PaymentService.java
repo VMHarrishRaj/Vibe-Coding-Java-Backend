@@ -279,6 +279,59 @@ public class PaymentService {
     }
 
     // ═══════════════════════════════════════
+    // MANUAL REFUND (ADMIN-INITIATED)
+    // ═══════════════════════════════════════
+
+    /**
+     * Admin manually issues a refund for a booking, independent of cancellation flow.
+     *
+     * Guards:
+     * - Booking must exist
+     * - A SUCCEEDED CHARGE must exist (otherwise nothing to refund)
+     * - A REFUND transaction must not already exist (idempotency guard)
+     */
+    @Transactional
+    public void adminRefundBooking(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking", "id", bookingId));
+
+        Optional<PaymentTransaction> chargeOpt = transactionRepository
+                .findByBookingIdAndTypeAndStatus(bookingId, PaymentType.CHARGE, PaymentStatus.SUCCEEDED);
+
+        if (chargeOpt.isEmpty()) {
+            throw new BusinessException("NO_PAYMENT_TO_REFUND",
+                    "No succeeded payment found for this booking — nothing to refund");
+        }
+
+        boolean alreadyRefunded = transactionRepository
+                .existsByBookingIdAndType(bookingId, PaymentType.REFUND);
+        if (alreadyRefunded) {
+            throw new BusinessException("ALREADY_REFUNDED",
+                    "A refund has already been issued for this booking");
+        }
+
+        PaymentTransaction charge = chargeOpt.get();
+        GatewayPort adapter = selectAdapter(charge.getGateway());
+        String refundId = adapter.refund(charge.getGatewayPaymentId(), charge.getAmount(), charge.getCurrency());
+
+        PaymentTransaction refundTxn = PaymentTransaction.builder()
+                .booking(booking)
+                .gateway(charge.getGateway())
+                .gatewayTransferId(refundId)
+                .amount(charge.getAmount())
+                .currency(charge.getCurrency())
+                .status(PaymentStatus.SUCCEEDED)
+                .type(PaymentType.REFUND)
+                .build();
+        transactionRepository.save(refundTxn);
+
+        charge.setStatus(PaymentStatus.REFUNDED);
+        transactionRepository.save(charge);
+
+        log.info("Admin manual refund completed: bookingId={}, refundId={}", bookingId, refundId);
+    }
+
+    // ═══════════════════════════════════════
     // OWNER PAYOUT (CALLED ON BOOKING COMPLETED)
     // ═══════════════════════════════════════
 
@@ -687,12 +740,30 @@ public class PaymentService {
 
     @Transactional(readOnly = true)
     public com.truckhire.common.dto.PagedResponse<com.truckhire.modules.payment.dto.AdminPaymentListResponse>
-            getAdminPayments(String search, org.springframework.data.domain.Pageable pageable) {
+            getAdminPayments(String search, String settlementStatus, org.springframework.data.domain.Pageable pageable) {
 
         org.springframework.data.domain.Page<PaymentTransaction> page;
-        if (search != null && !search.isBlank()) {
+        boolean hasSearch = search != null && !search.isBlank();
+        boolean hasStatus = settlementStatus != null && !settlementStatus.isBlank();
+
+        PaymentStatus statusFilter = null;
+        if (hasStatus) {
+            try {
+                statusFilter = PaymentStatus.valueOf(settlementStatus.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                // Unrecognized status — treat as no filter
+                hasStatus = false;
+            }
+        }
+
+        if (hasSearch && hasStatus) {
+            String q = "%" + search.toLowerCase().trim() + "%";
+            page = transactionRepository.searchChargesByStatus(q, statusFilter, pageable);
+        } else if (hasSearch) {
             String q = "%" + search.toLowerCase().trim() + "%";
             page = transactionRepository.searchChargesWithDetails(q, pageable);
+        } else if (hasStatus) {
+            page = transactionRepository.findChargesByStatus(statusFilter, pageable);
         } else {
             page = transactionRepository.findAllChargesWithDetails(pageable);
         }
@@ -830,6 +901,118 @@ public class PaymentService {
                 .platformShare(txn.getPlatformFee())
                 .paymentStatus(txn.getStatus().name())
                 .settlementStatus(resolveSettlementStatus(txn))
+                .build();
+    }
+
+    // ═══════════════════════════════════════
+    // GROUPED INVOICE VIEW (BY BOOKING)
+    // ═══════════════════════════════════════
+
+    /**
+     * Returns one row per booking combining the CHARGE txn with its optional MILEAGE_TOPUP.
+     * Supports the same search + settlementStatus filters as the flat invoice list.
+     */
+    @Transactional(readOnly = true)
+    public com.truckhire.common.dto.PagedResponse<com.truckhire.modules.payment.dto.AdminBookingInvoiceResponse>
+            getAdminPaymentsByBooking(String search, String settlementStatus,
+                                     org.springframework.data.domain.Pageable pageable) {
+
+        boolean hasSearch = search != null && !search.isBlank();
+        boolean hasStatus = settlementStatus != null && !settlementStatus.isBlank();
+
+        PaymentStatus statusFilter = null;
+        if (hasStatus) {
+            try {
+                statusFilter = PaymentStatus.valueOf(settlementStatus.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                hasStatus = false;
+            }
+        }
+
+        org.springframework.data.domain.Page<PaymentTransaction> page;
+        if (hasSearch && hasStatus) {
+            String q = "%" + search.toLowerCase().trim() + "%";
+            page = transactionRepository.searchChargeOnlyByStatus(q, statusFilter, pageable);
+        } else if (hasSearch) {
+            String q = "%" + search.toLowerCase().trim() + "%";
+            page = transactionRepository.searchChargeOnlyWithDetails(q, pageable);
+        } else if (hasStatus) {
+            page = transactionRepository.findChargeOnlyByStatus(statusFilter, pageable);
+        } else {
+            page = transactionRepository.findAllChargeOnlyWithDetails(pageable);
+        }
+
+        // Batch-fetch mileage transactions for all bookings on this page
+        java.util.List<java.util.UUID> bookingIds = page.getContent().stream()
+                .map(t -> t.getBooking().getId())
+                .collect(java.util.stream.Collectors.toList());
+
+        java.util.Map<java.util.UUID, PaymentTransaction> mileageByBookingId = new java.util.HashMap<>();
+        if (!bookingIds.isEmpty()) {
+            transactionRepository.findMileageByBookingIds(bookingIds)
+                    .forEach(m -> mileageByBookingId.put(m.getBooking().getId(), m));
+        }
+
+        java.util.List<com.truckhire.modules.payment.dto.AdminBookingInvoiceResponse> content =
+                page.getContent().stream()
+                        .map(charge -> mapToBookingInvoiceResponse(charge, mileageByBookingId.get(charge.getBooking().getId())))
+                        .collect(java.util.stream.Collectors.toList());
+
+        return com.truckhire.common.dto.PagedResponse.<com.truckhire.modules.payment.dto.AdminBookingInvoiceResponse>builder()
+                .content(content)
+                .pageNumber(page.getNumber())
+                .pageSize(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .last(page.isLast())
+                .build();
+    }
+
+    private com.truckhire.modules.payment.dto.AdminBookingInvoiceResponse mapToBookingInvoiceResponse(
+            PaymentTransaction charge, PaymentTransaction mileage) {
+
+        com.truckhire.modules.booking.entity.Booking booking = charge.getBooking();
+        User renter = booking.getRenter();
+
+        boolean hasMileage = mileage != null;
+        java.math.BigDecimal mileageAmount = hasMileage ? mileage.getAmount() : null;
+        java.math.BigDecimal totalAmount = hasMileage
+                ? charge.getAmount().add(mileage.getAmount())
+                : charge.getAmount();
+
+        java.math.BigDecimal ownerShare = charge.getOwnerAmount() != null ? charge.getOwnerAmount() : java.math.BigDecimal.ZERO;
+        java.math.BigDecimal platformShare = charge.getPlatformFee() != null ? charge.getPlatformFee() : java.math.BigDecimal.ZERO;
+        if (hasMileage) {
+            if (mileage.getOwnerAmount() != null) ownerShare = ownerShare.add(mileage.getOwnerAmount());
+            if (mileage.getPlatformFee() != null) platformShare = platformShare.add(mileage.getPlatformFee());
+        }
+
+        // Payment status: derived from charge + optional mileage txn statuses
+        String paymentStatus;
+        if (charge.getStatus() != PaymentStatus.SUCCEEDED) {
+            paymentStatus = "PENDING";
+        } else if (hasMileage && mileage.getStatus() != PaymentStatus.SUCCEEDED) {
+            paymentStatus = "PARTIALLY_PAID";
+        } else {
+            paymentStatus = "FULLY_PAID";
+        }
+
+        return com.truckhire.modules.payment.dto.AdminBookingInvoiceResponse.builder()
+                .bookingId(booking.getId().toString())
+                .bookingNumber(booking.getBookingNumber())
+                .renterName(renter != null ? renter.getFullname() : null)
+                .chargeInvoiceNumber(charge.getInvoiceNumber())
+                .mileageInvoiceNumber(hasMileage ? mileage.getInvoiceNumber() : null)
+                .paymentDate(charge.getCreatedAt() != null ? charge.getCreatedAt().toString() : null)
+                .gateway(charge.getGateway() != null ? charge.getGateway().name() : null)
+                .dayAmount(charge.getAmount())
+                .mileageAmount(mileageAmount)
+                .totalAmount(totalAmount)
+                .ownerShare(ownerShare)
+                .platformShare(platformShare)
+                .paymentStatus(paymentStatus)
+                .settlementStatus(resolveSettlementStatus(charge))
+                .hasMileage(hasMileage)
                 .build();
     }
 

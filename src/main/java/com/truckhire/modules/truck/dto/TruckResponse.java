@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * Response DTO for full truck detail — GET /trucks/{id}
@@ -19,6 +20,8 @@ public class TruckResponse {
     private String id;
     private String ownerId;
     private String ownerName;
+    private String ownerPhone;
+    private String ownerEmail;
 
     // ── Classification ──
     private String vehicleType;
@@ -48,6 +51,12 @@ public class TruckResponse {
     private String status; // "PENDING_APPROVAL", "APPROVED", "REJECTED", "INACTIVE"
     private String rejectionReason;
     private String description;
+
+    /** True when the owner has attached an active insurance plan to this truck */
+    private boolean insured;
+
+    // ── Pickup Locations ──
+    private List<String> pickupLocations;  // multiple pickup cities (SCRUM-87/88); empty if none set
 
     // ── Metadata ──
     private String createdAt;

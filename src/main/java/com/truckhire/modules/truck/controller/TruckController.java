@@ -143,10 +143,11 @@ public class TruckController {
             @RequestParam(required = false) String sortBy,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate availableFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate availableTo,
+            @RequestParam(required = false) Boolean insured,
             @PageableDefault(size = 20) Pageable pageable) {
 
         PagedResponse<TruckListResponse> trucks = truckService.searchTrucks(
-                city, vehicleType, minPrice, maxPrice, minCapacity, sortBy, availableFrom, availableTo, pageable);
+                city, vehicleType, minPrice, maxPrice, minCapacity, sortBy, availableFrom, availableTo, insured, pageable);
 
         return ResponseEntity.ok(ApiResponse.success("Trucks retrieved", trucks));
     }

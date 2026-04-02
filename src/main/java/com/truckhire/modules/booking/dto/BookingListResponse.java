@@ -26,7 +26,8 @@ public class BookingListResponse {
     private Integer totalDays;
     private BigDecimal dayAmount;   // day-based cost (always available)
     private BigDecimal totalAmount; // null until COMPLETED
-    private String status;
+    private String status;        // raw enum: PENDING, AWAITING_APPROVAL, CONFIRMED, ACTIVE, COMPLETED, REJECTED, CANCELLED
+    private String displayStatus; // grouped label for UI: ONGOING, UPCOMING, COMPLETED, REJECTED, CANCELLED
     private String createdAt;
     private Boolean isOverdue;  // true when status=ACTIVE and endDate < today
 }

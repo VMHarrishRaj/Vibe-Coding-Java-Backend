@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -28,6 +29,8 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     Optional<PaymentTransaction> findFirstByBookingIdOrderByCreatedAtDesc(UUID bookingId);
 
     boolean existsByBookingIdAndTypeAndStatusIn(UUID bookingId, PaymentType type, java.util.List<PaymentStatus> statuses);
+
+    boolean existsByBookingIdAndType(UUID bookingId, PaymentType type);
 
     /**
      * Admin payments list — CHARGE + MILEAGE_TOPUP transactions, with booking + renter eagerly loaded.
@@ -58,6 +61,40 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
               AND (:q IS NULL OR LOWER(t.invoiceNumber) LIKE :q OR LOWER(b.bookingNumber) LIKE :q)
             """)
     Page<PaymentTransaction> searchChargesWithDetails(@Param("q") String q, Pageable pageable);
+
+    @Query(value = """
+            SELECT t FROM PaymentTransaction t
+            JOIN FETCH t.booking b
+            JOIN FETCH b.renter
+            WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND t.status = :status
+            ORDER BY t.createdAt DESC
+            """,
+            countQuery = """
+            SELECT COUNT(t) FROM PaymentTransaction t JOIN t.booking b
+            WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND t.status = :status
+            """)
+    Page<PaymentTransaction> findChargesByStatus(
+            @Param("status") PaymentStatus status, Pageable pageable);
+
+    @Query(value = """
+            SELECT t FROM PaymentTransaction t
+            JOIN FETCH t.booking b
+            JOIN FETCH b.renter
+            WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND t.status = :status
+              AND (:q IS NULL OR LOWER(t.invoiceNumber) LIKE :q OR LOWER(b.bookingNumber) LIKE :q)
+            ORDER BY t.createdAt DESC
+            """,
+            countQuery = """
+            SELECT COUNT(t) FROM PaymentTransaction t JOIN t.booking b
+            WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND t.status = :status
+              AND (:q IS NULL OR LOWER(t.invoiceNumber) LIKE :q OR LOWER(b.bookingNumber) LIKE :q)
+            """)
+    Page<PaymentTransaction> searchChargesByStatus(
+            @Param("q") String q, @Param("status") PaymentStatus status, Pageable pageable);
 
     // Get next invoice sequence value
     @Query(value = "SELECT nextval('invoice_seq')", nativeQuery = true)
@@ -99,4 +136,84 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
               AND pt.status IN ('PAID_OUT', 'PAYOUT_PENDING')
             """)
     BigDecimal sumOwnerEarnings(@Param("ownerId") UUID ownerId);
+
+    // Admin dashboard: total platform revenue = sum of all PAID CHARGE + MILEAGE_TOPUP transactions.
+    // Uses payment_transactions as single source of truth — matches exactly what the invoice screen shows.
+    // Intentionally NOT filtered by booking status: a booking can be ACTIVE with payment already captured.
+    @Query("""
+            SELECT COALESCE(SUM(pt.amount), 0)
+            FROM PaymentTransaction pt
+            WHERE pt.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND pt.status = 'SUCCEEDED'
+            """)
+    BigDecimal sumTotalPlatformRevenue();
+
+    // ── Grouped invoice view (GET /admin/payments/by-booking) ──
+    // Returns only CHARGE transactions (one per booking). Mileage is fetched separately via findMileageByBookingIds.
+
+    @Query(value = """
+            SELECT t FROM PaymentTransaction t
+            JOIN FETCH t.booking b
+            JOIN FETCH b.renter
+            WHERE t.type = 'CHARGE'
+            ORDER BY t.createdAt DESC
+            """,
+            countQuery = "SELECT COUNT(t) FROM PaymentTransaction t WHERE t.type = 'CHARGE'")
+    Page<PaymentTransaction> findAllChargeOnlyWithDetails(Pageable pageable);
+
+    @Query(value = """
+            SELECT t FROM PaymentTransaction t
+            JOIN FETCH t.booking b
+            JOIN FETCH b.renter
+            WHERE t.type = 'CHARGE'
+              AND (:q IS NULL OR LOWER(t.invoiceNumber) LIKE :q OR LOWER(b.bookingNumber) LIKE :q)
+            ORDER BY t.createdAt DESC
+            """,
+            countQuery = """
+            SELECT COUNT(t) FROM PaymentTransaction t JOIN t.booking b
+            WHERE t.type = 'CHARGE'
+              AND (:q IS NULL OR LOWER(t.invoiceNumber) LIKE :q OR LOWER(b.bookingNumber) LIKE :q)
+            """)
+    Page<PaymentTransaction> searchChargeOnlyWithDetails(@Param("q") String q, Pageable pageable);
+
+    @Query(value = """
+            SELECT t FROM PaymentTransaction t
+            JOIN FETCH t.booking b
+            JOIN FETCH b.renter
+            WHERE t.type = 'CHARGE'
+              AND t.status = :status
+            ORDER BY t.createdAt DESC
+            """,
+            countQuery = """
+            SELECT COUNT(t) FROM PaymentTransaction t WHERE t.type = 'CHARGE' AND t.status = :status
+            """)
+    Page<PaymentTransaction> findChargeOnlyByStatus(
+            @Param("status") PaymentStatus status, Pageable pageable);
+
+    @Query(value = """
+            SELECT t FROM PaymentTransaction t
+            JOIN FETCH t.booking b
+            JOIN FETCH b.renter
+            WHERE t.type = 'CHARGE'
+              AND t.status = :status
+              AND (:q IS NULL OR LOWER(t.invoiceNumber) LIKE :q OR LOWER(b.bookingNumber) LIKE :q)
+            ORDER BY t.createdAt DESC
+            """,
+            countQuery = """
+            SELECT COUNT(t) FROM PaymentTransaction t JOIN t.booking b
+            WHERE t.type = 'CHARGE'
+              AND t.status = :status
+              AND (:q IS NULL OR LOWER(t.invoiceNumber) LIKE :q OR LOWER(b.bookingNumber) LIKE :q)
+            """)
+    Page<PaymentTransaction> searchChargeOnlyByStatus(
+            @Param("q") String q, @Param("status") PaymentStatus status, Pageable pageable);
+
+    // Batch fetch mileage transactions for a set of bookings — used to zip into grouped invoice rows.
+    // JOIN FETCH to avoid lazy-load on booking when building the response.
+    @Query("""
+            SELECT t FROM PaymentTransaction t
+            JOIN FETCH t.booking b
+            WHERE b.id IN :bookingIds AND t.type = 'MILEAGE_TOPUP'
+            """)
+    List<PaymentTransaction> findMileageByBookingIds(@Param("bookingIds") List<UUID> bookingIds);
 }

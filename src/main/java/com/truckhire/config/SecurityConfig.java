@@ -106,6 +106,9 @@ public class SecurityConfig {
                     .requestMatchers("/trucks/*/booked-dates").permitAll()
                     .requestMatchers("/trucks/*/availability").permitAll()
 
+                    // Addon services — public preview before booking
+                    .requestMatchers("/trucks/*/addons").permitAll()
+
                     // All other APIs require authentication
                     .anyRequest().authenticated()
             )

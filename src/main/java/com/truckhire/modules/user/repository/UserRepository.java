@@ -88,11 +88,32 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             """)
     Page<User> searchByKeywordAndRoleAndStatus(@Param("q") String q, @Param("role") String role, @Param("status") UserStatus status, Pageable pageable);
 
+    // ── Stripe Connect filter (OWNER role only) ──
+
+    @Query("""
+            SELECT u FROM User u
+            WHERE u.deletedAt IS NULL
+              AND u.role.name = 'OWNER'
+              AND u.stripeAccountId IS NOT NULL
+            """)
+    Page<User> findOwnersWithStripeConnected(Pageable pageable);
+
+    @Query("""
+            SELECT u FROM User u
+            WHERE u.deletedAt IS NULL
+              AND u.role.name = 'OWNER'
+              AND u.stripeAccountId IS NULL
+            """)
+    Page<User> findOwnersWithoutStripeConnected(Pageable pageable);
+
     // ── Admin guard: prevent suspending the last active admin ──
 
     @Query("SELECT COUNT(u) FROM User u WHERE u.role.name = 'ADMIN' " +
             "AND u.status = 'ACTIVE' AND u.deletedAt IS NULL")
     long countActiveAdmins();
+
+    // Admin dashboard: total non-deleted users across all roles (matches GET /admin/users totalElements)
+    long countByDeletedAtIsNull();
 
     // Admin dashboard: count non-deleted users by role name
     long countByRole_NameAndDeletedAtIsNull(String roleName);

@@ -66,6 +66,7 @@ public class TruckService {
     private final FileStorageService fileStorageService;
     private final BookingRepository bookingRepository;
     private final PaymentTransactionRepository transactionRepository;
+    private final PickupLocationRepository pickupLocationRepository;
 
     // ═══════════════════════════════════════
     // OWNER OPERATIONS
@@ -121,6 +122,14 @@ public class TruckService {
         log.info("Truck added: id={}, owner={}, reg={}",
                 saved.getId(), ownerId, saved.getRegistrationNumber());
 
+        // Save pickup locations if provided
+        if (request.getPickupLocations() != null && !request.getPickupLocations().isEmpty()) {
+            request.getPickupLocations().stream()
+                    .filter(city -> city != null && !city.isBlank())
+                    .map(city -> PickupLocation.builder().truck(saved).city(city.trim()).build())
+                    .forEach(pickupLocationRepository::save);
+        }
+
         // If a photo was included with the creation request, store it immediately
         if (photo != null && !photo.isEmpty()) {
             DocumentType photoDocType = documentTypeRepository
@@ -148,6 +157,22 @@ public class TruckService {
     public TruckResponse updateTruck(UUID ownerId, UUID truckId, UpdateTruckRequest request) {
         Truck truck = findTruckOwnedBy(truckId, ownerId);
 
+        if (request.getVehicleType() != null) {
+            VehicleType vehicleType = vehicleTypeRepository
+                    .findByName(request.getVehicleType().toUpperCase())
+                    .orElseThrow(() -> new BusinessException("INVALID_VEHICLE_TYPE",
+                            "Invalid vehicle type: " + request.getVehicleType()));
+            truck.setVehicleType(vehicleType);
+        }
+        if (request.getRegistrationNumber() != null) {
+            String newRegNum = request.getRegistrationNumber().toUpperCase().trim();
+            if (!newRegNum.equals(truck.getRegistrationNumber()) &&
+                    truckRepository.existsByRegistrationNumberAndDeletedAtIsNull(newRegNum)) {
+                throw new BusinessException("REGISTRATION_NUMBER_TAKEN",
+                        "A truck with this registration number already exists");
+            }
+            truck.setRegistrationNumber(newRegNum);
+        }
         if (request.getModel() != null)
             truck.setModel(request.getModel().trim());
         if (request.getMake() != null)
@@ -176,6 +201,15 @@ public class TruckService {
             truck.setFuelType(request.getFuelType());
         if (request.getVinNumber() != null)
             truck.setVinNumber(request.getVinNumber());
+
+        // Pickup locations: null = no change; empty list = remove all; non-empty = replace all
+        if (request.getPickupLocations() != null) {
+            pickupLocationRepository.deleteByTruckId(truck.getId());
+            request.getPickupLocations().stream()
+                    .filter(city -> city != null && !city.isBlank())
+                    .map(city -> PickupLocation.builder().truck(truck).city(city.trim()).build())
+                    .forEach(pickupLocationRepository::save);
+        }
 
         Truck saved = truckRepository.save(truck);
         log.info("Truck updated: id={}", truckId);
@@ -326,6 +360,7 @@ public class TruckService {
             BigDecimal minPrice, BigDecimal maxPrice,
             Integer minCapacity, String sortBy,
             LocalDate availableFrom, LocalDate availableTo,
+            Boolean insured,
             Pageable pageable) {
 
         // ── Date range validation ──
@@ -355,11 +390,11 @@ public class TruckService {
         if (availableFrom != null) {
             page = truckRepository.searchPublicTrucksWithDates(
                     cityLower, vehicleTypeNorm, minPrice, maxPrice, minCapacity,
-                    availableFrom, availableTo, sortedPageable);
+                    insured, availableFrom, availableTo, sortedPageable);
         } else {
             page = truckRepository.searchPublicTrucks(
                     cityLower, vehicleTypeNorm, minPrice, maxPrice, minCapacity,
-                    sortedPageable);
+                    insured, sortedPageable);
         }
 
         return buildPagedResponseWithAvailability(page);
@@ -652,6 +687,8 @@ public class TruckService {
                 .id(truck.getId().toString())
                 .ownerId(truck.getOwner().getId().toString())
                 .ownerName(truck.getOwner().getFullname())
+                .ownerPhone(truck.getOwner().getPhone())
+                .ownerEmail(truck.getOwner().getEmail())
                 .vehicleType(truck.getVehicleType().getName())
                 .registrationNumber(truck.getRegistrationNumber())
                 .model(truck.getModel())
@@ -671,8 +708,12 @@ public class TruckService {
                 .status(truck.getStatus().name())
                 .rejectionReason(truck.getRejectionReason())
                 .description(truck.getDescription())
+                .insured(truck.isInsured())
                 .createdAt(truck.getCreatedAt() != null ? truck.getCreatedAt().toString() : null)
-                .coverPhotoUrl(coverPhotoUrl);
+                .coverPhotoUrl(coverPhotoUrl)
+                .pickupLocations(truck.getPickupLocations().stream()
+                        .map(PickupLocation::getCity)
+                        .collect(Collectors.toList()));
 
         // Availability enrichment — same logic as enrichAvailability() for TruckListResponse
         switch (truck.getStatus()) {
@@ -698,7 +739,7 @@ public class TruckService {
         return builder.build();
     }
 
-    private TruckListResponse mapToListResponse(Truck truck, String coverPhotoUrl) {
+    private TruckListResponse mapToListResponse(Truck truck, String coverPhotoUrl, List<String> pickupLocations) {
         return TruckListResponse.builder()
                 .id(truck.getId().toString())
                 .vehicleType(truck.getVehicleType().getName())
@@ -706,12 +747,25 @@ public class TruckService {
                 .model(truck.getModel())
                 .make(truck.getMake())
                 .pricePerDay(truck.getPricePerDay())
+                .costPerMile(truck.getCostPerMile())
                 .locationCity(truck.getLocationCity())
+                .latitude(truck.getLatitude())
+                .longitude(truck.getLongitude())
                 .capacityTons(truck.getCapacityTons())
+                .description(truck.getDescription())
+                .year(truck.getYear())
+                .color(truck.getColor())
+                .fuelType(truck.getFuelType() != null ? truck.getFuelType().name() : null)
+                .vinNumber(truck.getVinNumber())
                 .status(truck.getStatus().name())
+                .insured(truck.isInsured())
+                .ownerId(truck.getOwner().getId().toString())
                 .ownerName(truck.getOwner().getFullname())
+                .ownerPhone(truck.getOwner().getPhone())
+                .ownerEmail(truck.getOwner().getEmail())
                 .createdAt(truck.getCreatedAt() != null ? truck.getCreatedAt().toString() : null)
                 .coverPhotoUrl(coverPhotoUrl)
+                .pickupLocations(pickupLocations != null ? pickupLocations : List.of())
                 .build();
     }
 
@@ -736,14 +790,22 @@ public class TruckService {
             List<Object[]> rows = truckDocumentRepository.findFirstPhotoPerTruck(truckIds);
             for (Object[] row : rows) {
                 UUID truckId = (UUID) row[0];
-                // Only keep the first result per truck (query ordered by uploadedAt ASC)
                 coverPhotos.putIfAbsent(truckId, baseUrl + "/api/v1/files/" + row[1]);
             }
         }
 
+        // Build truckId -> pickup cities map in one query (no N+1)
+        Map<UUID, List<String>> pickupLocationMap = new HashMap<>();
+        if (!truckIds.isEmpty()) {
+            pickupLocationRepository.findByTruckIdIn(truckIds).forEach(pl ->
+                pickupLocationMap.computeIfAbsent(pl.getTruck().getId(), k -> new java.util.ArrayList<>())
+                        .add(pl.getCity()));
+        }
+
         return PagedResponse.<TruckListResponse>builder()
                 .content(page.getContent().stream()
-                        .map(t -> mapToListResponse(t, coverPhotos.get(t.getId())))
+                        .map(t -> mapToListResponse(t, coverPhotos.get(t.getId()),
+                                pickupLocationMap.getOrDefault(t.getId(), List.of())))
                         .collect(Collectors.toList()))
                 .pageNumber(page.getNumber())
                 .pageSize(page.getSize())
@@ -788,9 +850,18 @@ public class TruckService {
             }
         }
 
+        // Pickup locations — batch fetch to avoid N+1
+        Map<UUID, List<String>> pickupLocationMap = new HashMap<>();
+        if (!truckIds.isEmpty()) {
+            pickupLocationRepository.findByTruckIdIn(truckIds).forEach(pl ->
+                pickupLocationMap.computeIfAbsent(pl.getTruck().getId(), k -> new java.util.ArrayList<>())
+                        .add(pl.getCity()));
+        }
+
         List<TruckListResponse> content = page.getContent().stream()
                 .map(truck -> {
-                    TruckListResponse response = mapToListResponse(truck, coverPhotos.get(truck.getId()));
+                    TruckListResponse response = mapToListResponse(truck, coverPhotos.get(truck.getId()),
+                            pickupLocationMap.getOrDefault(truck.getId(), List.of()));
                     enrichAvailability(response, truck, activeBookingsByTruckId.get(truck.getId()));
                     return response;
                 })

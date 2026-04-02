@@ -105,6 +105,21 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.success("Password changed successfully", null));
     }
 
+    /**
+     * POST /api/v1/users/me/profile-photo
+     *
+     * Upload or replace the authenticated user's profile photo.
+     * Multipart form-data with field name "file".
+     */
+    @PostMapping("/me/profile-photo")
+    public ResponseEntity<ApiResponse<UserProfileResponse>> uploadProfilePhoto(
+            @RequestParam("file") MultipartFile file) {
+
+        User currentUser = SecurityUtils.getCurrentUser();
+        UserProfileResponse profile = userService.uploadProfilePhoto(currentUser.getId(), file);
+        return ResponseEntity.ok(ApiResponse.success("Profile photo uploaded", profile));
+    }
+
     // ═══════════════════════════════════════
     // KYC DOCUMENT ENDPOINTS
     // ═══════════════════════════════════════
