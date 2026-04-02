@@ -33,9 +33,8 @@ public class AdminDashboardService {
         // ── KPI cards ──
         // Single source of truth: sum PAID CHARGE + MILEAGE_TOPUP transactions — matches invoice screen exactly.
         BigDecimal totalRevenue = transactionRepository.sumTotalPlatformRevenue();
-        long activeBookings = bookingRepository.countByStatusAndDeletedAtIsNull(BookingStatus.ACTIVE);
-        // All non-deleted users across all roles — matches totalElements returned by GET /admin/users (no filter).
-        long totalClients = userRepository.countByDeletedAtIsNull();
+        // totalClients = active renters only (Clients = Renters in admin terminology)
+        long totalClients = userRepository.countByRole_NameAndStatusAndDeletedAtIsNull("RENTER", UserStatus.ACTIVE);
         long activeOwnerCount = userRepository.countByRole_NameAndStatusAndDeletedAtIsNull("OWNER", UserStatus.ACTIVE);
 
         // ── Booking Status widget ──
@@ -65,7 +64,6 @@ public class AdminDashboardService {
 
         return AdminDashboardStatsResponse.builder()
                 .totalRevenue(totalRevenue)
-                .activeBookings(activeBookings)
                 .totalVehicles(totalVehicles)
                 .totalClients(totalClients)
                 .activeOwnerCount(activeOwnerCount)
