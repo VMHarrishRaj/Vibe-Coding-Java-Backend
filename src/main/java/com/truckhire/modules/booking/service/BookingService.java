@@ -9,6 +9,8 @@ import com.truckhire.modules.booking.entity.BookingStatus;
 import com.truckhire.modules.booking.entity.BookingStatusHistory;
 import com.truckhire.modules.booking.repository.BookingRepository;
 import com.truckhire.modules.booking.repository.BookingStatusHistoryRepository;
+import com.truckhire.modules.addon.dto.BookingAddonSummary;
+import com.truckhire.modules.addon.service.AddonService;
 import com.truckhire.modules.payment.service.PaymentService;
 import com.truckhire.modules.truck.entity.Truck;
 import com.truckhire.modules.truck.entity.TruckStatus;
@@ -61,6 +63,7 @@ public class BookingService {
     private final TruckDocumentRepository truckDocumentRepository;
     private final UserRepository userRepository;
     private final PaymentService paymentService;
+    private final AddonService addonService;
 
     public BookingService(
             BookingRepository bookingRepository,
@@ -68,13 +71,15 @@ public class BookingService {
             TruckRepository truckRepository,
             TruckDocumentRepository truckDocumentRepository,
             UserRepository userRepository,
-            @Lazy PaymentService paymentService) {
+            @Lazy PaymentService paymentService,
+            AddonService addonService) {
         this.bookingRepository = bookingRepository;
         this.historyRepository = historyRepository;
         this.truckRepository = truckRepository;
         this.truckDocumentRepository = truckDocumentRepository;
         this.userRepository = userRepository;
         this.paymentService = paymentService;
+        this.addonService = addonService;
     }
 
     // ═══════════════════════════════════════
@@ -163,6 +168,26 @@ public class BookingService {
 
         Booking saved = bookingRepository.save(booking);
         recordHistory(saved, BookingStatus.PENDING, renter, null);
+
+        // Resolve addon selections (insurance auto-applied, RSA + equipment from request)
+        AddonService.AddonResolutionResult addonResult = addonService.resolveBookingAddons(
+                saved, truck,
+                request.getRsaAddonIds(),
+                request.getEquipmentIds());
+
+        if (addonResult.insuranceCost().compareTo(BigDecimal.ZERO) > 0
+                || addonResult.additionalServicesCost().compareTo(BigDecimal.ZERO) > 0) {
+            saved.setInsuranceCost(addonResult.insuranceCost().compareTo(BigDecimal.ZERO) > 0
+                    ? addonResult.insuranceCost() : null);
+            saved.setAdditionalServicesCost(addonResult.additionalServicesCost().compareTo(BigDecimal.ZERO) > 0
+                    ? addonResult.additionalServicesCost() : null);
+            // Recalculate total: dayAmount + insuranceCost + additionalServicesCost
+            BigDecimal total = dayAmount
+                    .add(addonResult.insuranceCost())
+                    .add(addonResult.additionalServicesCost());
+            saved.setTotalAmount(total);
+            bookingRepository.save(saved);
+        }
 
         log.info("Booking created: number={}, truck={}, renter={}", bookingNumber, truck.getId(), renterId);
         return mapToFullResponse(saved);
@@ -581,6 +606,9 @@ public class BookingService {
     }
 
     private BookingResponse mapToFullResponse(Booking booking) {
+        // Load addon summaries
+        List<BookingAddonSummary> addons = addonService.getBookingAddons(booking.getId());
+
         // Load status history
         List<BookingStatusHistory> history = historyRepository
                 .findByBookingIdOrderByChangedAtAsc(booking.getId());
@@ -653,6 +681,7 @@ public class BookingService {
                                 .changedAt(h.getChangedAt().toString())
                                 .build())
                         .collect(Collectors.toList()))
+                .addons(addons.isEmpty() ? null : addons)
                 .build();
     }
 

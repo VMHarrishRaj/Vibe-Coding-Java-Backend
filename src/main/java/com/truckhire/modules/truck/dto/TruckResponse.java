@@ -52,6 +52,9 @@ public class TruckResponse {
     private String rejectionReason;
     private String description;
 
+    /** True when the owner has attached an active insurance plan to this truck */
+    private boolean insured;
+
     // ── Pickup Locations ──
     private List<String> pickupLocations;  // multiple pickup cities (SCRUM-87/88); empty if none set
 

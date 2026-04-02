@@ -105,4 +105,12 @@ public class Truck extends BaseAuditEntity {
     @OneToMany(mappedBy = "truck", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<PickupLocation> pickupLocations = new ArrayList<>();
+
+    /**
+     * True when the owner has attached at least one active insurance plan to this truck.
+     * Managed by AddonService — do not set directly.
+     */
+    @Column(name = "insured", nullable = false)
+    @Builder.Default
+    private boolean insured = false;
 }

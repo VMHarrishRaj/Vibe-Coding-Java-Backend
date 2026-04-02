@@ -47,6 +47,9 @@ public class TruckListResponse {
     private String coverPhotoUrl;
     private List<String> pickupLocations;  // multiple pickup cities (SCRUM-87/88); empty if none set       // nullable — first PHOTO document URL, null if no photos uploaded
 
+    /** True when the owner has attached an active insurance plan */
+    private boolean insured;
+
     // Availability enrichment (Phase 5 — populated in public search)
     private String availabilityStatus;  // "AVAILABLE", "RENTED", "UNAVAILABLE"
     private String rentedUntil;         // ISO date, only when RENTED

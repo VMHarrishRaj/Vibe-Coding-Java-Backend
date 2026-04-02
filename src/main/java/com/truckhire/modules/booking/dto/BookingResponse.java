@@ -1,5 +1,6 @@
 package com.truckhire.modules.booking.dto;
 
+import com.truckhire.modules.addon.dto.BookingAddonSummary;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -67,6 +68,9 @@ public class BookingResponse {
 
     // Status history
     private List<StatusHistoryEntry> statusHistory;
+
+    // Addon services selected at booking time
+    private List<BookingAddonSummary> addons;
 
     @Data
     @Builder

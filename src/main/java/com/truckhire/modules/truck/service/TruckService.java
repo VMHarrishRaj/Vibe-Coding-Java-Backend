@@ -360,6 +360,7 @@ public class TruckService {
             BigDecimal minPrice, BigDecimal maxPrice,
             Integer minCapacity, String sortBy,
             LocalDate availableFrom, LocalDate availableTo,
+            Boolean insured,
             Pageable pageable) {
 
         // ── Date range validation ──
@@ -389,11 +390,11 @@ public class TruckService {
         if (availableFrom != null) {
             page = truckRepository.searchPublicTrucksWithDates(
                     cityLower, vehicleTypeNorm, minPrice, maxPrice, minCapacity,
-                    availableFrom, availableTo, sortedPageable);
+                    insured, availableFrom, availableTo, sortedPageable);
         } else {
             page = truckRepository.searchPublicTrucks(
                     cityLower, vehicleTypeNorm, minPrice, maxPrice, minCapacity,
-                    sortedPageable);
+                    insured, sortedPageable);
         }
 
         return buildPagedResponseWithAvailability(page);
@@ -707,6 +708,7 @@ public class TruckService {
                 .status(truck.getStatus().name())
                 .rejectionReason(truck.getRejectionReason())
                 .description(truck.getDescription())
+                .insured(truck.isInsured())
                 .createdAt(truck.getCreatedAt() != null ? truck.getCreatedAt().toString() : null)
                 .coverPhotoUrl(coverPhotoUrl)
                 .pickupLocations(truck.getPickupLocations().stream()
@@ -756,6 +758,7 @@ public class TruckService {
                 .fuelType(truck.getFuelType() != null ? truck.getFuelType().name() : null)
                 .vinNumber(truck.getVinNumber())
                 .status(truck.getStatus().name())
+                .insured(truck.isInsured())
                 .ownerId(truck.getOwner().getId().toString())
                 .ownerName(truck.getOwner().getFullname())
                 .ownerPhone(truck.getOwner().getPhone())

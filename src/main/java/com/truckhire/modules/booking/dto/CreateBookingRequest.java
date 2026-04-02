@@ -8,6 +8,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -33,4 +34,10 @@ public class CreateBookingRequest {
     private String pickupLocation;
     private String dropoffLocation;
     private String renterNotes;
+
+    /** RSA provider IDs from the admin catalog — renter picks one or none */
+    private List<UUID> rsaAddonIds;
+
+    /** Equipment IDs owned by the truck's owner — renter selects desired items */
+    private List<UUID> equipmentIds;
 }

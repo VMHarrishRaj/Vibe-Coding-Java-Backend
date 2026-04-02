@@ -79,6 +79,7 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
               AND (:minPrice IS NULL OR t.pricePerDay >= :minPrice)
               AND (:maxPrice IS NULL OR t.pricePerDay <= :maxPrice)
               AND (:minCapacity IS NULL OR t.capacityTons >= :minCapacity)
+              AND (:insured IS NULL OR t.insured = :insured)
             """)
     Page<Truck> searchPublicTrucks(
             @Param("cityLower") String cityLower,
@@ -86,6 +87,7 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
             @Param("minPrice") BigDecimal minPrice,
             @Param("maxPrice") BigDecimal maxPrice,
             @Param("minCapacity") Integer minCapacity,
+            @Param("insured") Boolean insured,
             Pageable pageable);
 
     // Date-filtered variant — only called when both availableFrom and availableTo are non-null.
@@ -101,6 +103,7 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
               AND (:minPrice IS NULL OR t.pricePerDay >= :minPrice)
               AND (:maxPrice IS NULL OR t.pricePerDay <= :maxPrice)
               AND (:minCapacity IS NULL OR t.capacityTons >= :minCapacity)
+              AND (:insured IS NULL OR t.insured = :insured)
               AND t.id NOT IN (
                   SELECT b.truck.id FROM Booking b
                   WHERE b.status IN ('PENDING', 'AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE')
@@ -114,6 +117,7 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
             @Param("minPrice") BigDecimal minPrice,
             @Param("maxPrice") BigDecimal maxPrice,
             @Param("minCapacity") Integer minCapacity,
+            @Param("insured") Boolean insured,
             @Param("availableFrom") LocalDate availableFrom,
             @Param("availableTo") LocalDate availableTo,
             Pageable pageable);
