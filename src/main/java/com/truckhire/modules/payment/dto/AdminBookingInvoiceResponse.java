@@ -22,6 +22,10 @@ public class AdminBookingInvoiceResponse {
     private String bookingNumber;
     private String renterName;
 
+    // Transaction IDs — use chargeTransactionId to navigate to invoice detail
+    private String chargeTransactionId;     // ID of the CHARGE transaction (use for GET /admin/payments/{id})
+    private String mileageTransactionId;    // ID of the MILEAGE_TOPUP transaction, null if no mileage
+
     // Invoice numbers
     private String chargeInvoiceNumber;     // from CHARGE txn
     private String mileageInvoiceNumber;    // from MILEAGE_TOPUP txn, null if no mileage

@@ -216,4 +216,12 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             WHERE b.id IN :bookingIds AND t.type = 'MILEAGE_TOPUP'
             """)
     List<PaymentTransaction> findMileageByBookingIds(@Param("bookingIds") List<UUID> bookingIds);
+
+    // Single-booking mileage lookup — used in invoice detail to fetch the paired MILEAGE_TOPUP for a CHARGE.
+    @Query("""
+            SELECT t FROM PaymentTransaction t
+            JOIN FETCH t.booking b
+            WHERE b.id = :bookingId AND t.type = 'MILEAGE_TOPUP'
+            """)
+    Optional<PaymentTransaction> findMileageByBookingId(@Param("bookingId") UUID bookingId);
 }

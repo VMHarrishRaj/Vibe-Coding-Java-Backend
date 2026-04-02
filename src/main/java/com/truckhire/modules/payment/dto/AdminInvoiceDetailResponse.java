@@ -45,6 +45,12 @@ public class AdminInvoiceDetailResponse {
     private String paymentMethod;    // e.g. "card" — null until populated
     private String cardLast4;        // last 4 digits — null until populated
 
+    // Paired mileage transaction — populated when this is a CHARGE and a MILEAGE_TOPUP exists for the same booking
+    private MileageDetail mileageTransaction;
+
+    // Combined summary across CHARGE + MILEAGE (always present when called with a CHARGE id)
+    private CombinedSummary combinedSummary;
+
     // Nested booking info
     private BookingDetail booking;
 
@@ -98,5 +104,38 @@ public class AdminInvoiceDetailResponse {
         private BigDecimal pricePerDay;
         private String registrationNumber;
         private String locationCity;
+    }
+
+    /** Paired mileage transaction summary — populated only when this detail is for a CHARGE invoice. */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class MileageDetail {
+        private String id;
+        private String invoiceNumber;
+        private String paymentDate;
+        private String paymentStatus;
+        private String settlementStatus;
+        private Integer milesDriven;
+        private BigDecimal costPerMile;
+        private BigDecimal mileageAmount;
+        private BigDecimal ownerShare;
+        private BigDecimal platformShare;
+    }
+
+    /** Combined cost breakdown across CHARGE + MILEAGE_TOPUP for the booking. */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CombinedSummary {
+        private BigDecimal dayAmount;               // CHARGE transaction amount
+        private BigDecimal mileageAmount;           // MILEAGE_TOPUP amount (0 if none)
+        private BigDecimal insuranceCost;           // from booking.insuranceCost
+        private BigDecimal additionalServicesCost;  // from booking.additionalServicesCost
+        private BigDecimal totalPaid;               // sum of all the above
+        private BigDecimal ownerShare;              // sum across both transactions
+        private BigDecimal platformShare;           // sum across both transactions
     }
 }

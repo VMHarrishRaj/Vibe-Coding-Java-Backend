@@ -818,6 +818,58 @@ public class PaymentService {
 
         boolean isMileage = txn.getType() == PaymentType.MILEAGE_TOPUP;
 
+        // When called with a CHARGE transaction, fetch the paired MILEAGE_TOPUP (if any) and build combined summary
+        com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.MileageDetail mileageDetail = null;
+        com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.CombinedSummary combinedSummary = null;
+
+        if (!isMileage) {
+            java.util.Optional<PaymentTransaction> pairedMileage =
+                    transactionRepository.findMileageByBookingId(booking.getId());
+
+            java.math.BigDecimal mileageAmt = java.math.BigDecimal.ZERO;
+            java.math.BigDecimal mileageOwnerShare = java.math.BigDecimal.ZERO;
+            java.math.BigDecimal mileagePlatformShare = java.math.BigDecimal.ZERO;
+
+            if (pairedMileage.isPresent()) {
+                PaymentTransaction m = pairedMileage.get();
+                Integer milesDriven = (booking.getOdometerEnd() != null && booking.getOdometerStart() != null)
+                        ? booking.getOdometerEnd() - booking.getOdometerStart() : null;
+                mileageAmt = m.getAmount() != null ? m.getAmount() : java.math.BigDecimal.ZERO;
+                mileageOwnerShare = m.getOwnerAmount() != null ? m.getOwnerAmount() : java.math.BigDecimal.ZERO;
+                mileagePlatformShare = m.getPlatformFee() != null ? m.getPlatformFee() : java.math.BigDecimal.ZERO;
+
+                mileageDetail = com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.MileageDetail.builder()
+                        .id(m.getId().toString())
+                        .invoiceNumber(m.getInvoiceNumber())
+                        .paymentDate(m.getCreatedAt() != null ? m.getCreatedAt().toString() : null)
+                        .paymentStatus(m.getStatus().name())
+                        .settlementStatus(resolveSettlementStatus(m))
+                        .milesDriven(milesDriven)
+                        .costPerMile(booking.getCostPerMile())
+                        .mileageAmount(mileageAmt)
+                        .ownerShare(m.getOwnerAmount())
+                        .platformShare(m.getPlatformFee())
+                        .build();
+            }
+
+            java.math.BigDecimal insuranceCost = booking.getInsuranceCost() != null
+                    ? booking.getInsuranceCost() : java.math.BigDecimal.ZERO;
+            java.math.BigDecimal additionalServicesCost = booking.getAdditionalServicesCost() != null
+                    ? booking.getAdditionalServicesCost() : java.math.BigDecimal.ZERO;
+            java.math.BigDecimal chargeOwnerShare = txn.getOwnerAmount() != null ? txn.getOwnerAmount() : java.math.BigDecimal.ZERO;
+            java.math.BigDecimal chargePlatformShare = txn.getPlatformFee() != null ? txn.getPlatformFee() : java.math.BigDecimal.ZERO;
+
+            combinedSummary = com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.CombinedSummary.builder()
+                    .dayAmount(txn.getAmount())
+                    .mileageAmount(mileageAmt)
+                    .insuranceCost(booking.getInsuranceCost())
+                    .additionalServicesCost(booking.getAdditionalServicesCost())
+                    .totalPaid(txn.getAmount().add(mileageAmt).add(insuranceCost).add(additionalServicesCost))
+                    .ownerShare(chargeOwnerShare.add(mileageOwnerShare))
+                    .platformShare(chargePlatformShare.add(mileagePlatformShare))
+                    .build();
+        }
+
         return com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.builder()
                 .id(txn.getId().toString())
                 .invoiceNumber(txn.getInvoiceNumber())
@@ -844,6 +896,8 @@ public class PaymentService {
                 .dayAmount(isMileage ? booking.getDayAmount() : null)
                 .mileageAmount(isMileage ? booking.getMileageAmount() : null)
                 .totalBookingAmount(isMileage ? booking.getTotalAmount() : null)
+                .mileageTransaction(mileageDetail)
+                .combinedSummary(combinedSummary)
                 .booking(com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.BookingDetail.builder()
                         .id(booking.getId().toString())
                         .startDate(booking.getStartDate().toString())
@@ -1001,6 +1055,8 @@ public class PaymentService {
                 .bookingId(booking.getId().toString())
                 .bookingNumber(booking.getBookingNumber())
                 .renterName(renter != null ? renter.getFullname() : null)
+                .chargeTransactionId(charge.getId().toString())
+                .mileageTransactionId(hasMileage ? mileage.getId().toString() : null)
                 .chargeInvoiceNumber(charge.getInvoiceNumber())
                 .mileageInvoiceNumber(hasMileage ? mileage.getInvoiceNumber() : null)
                 .paymentDate(charge.getCreatedAt() != null ? charge.getCreatedAt().toString() : null)
