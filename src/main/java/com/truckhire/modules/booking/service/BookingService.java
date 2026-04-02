@@ -557,12 +557,27 @@ public class BookingService {
     private List<BookingStatus> parseStatusFilters(List<String> statusFilters) {
         if (statusFilters == null || statusFilters.isEmpty()) return List.of();
         return statusFilters.stream()
-                .map(s -> {
-                    try { return BookingStatus.valueOf(s.toUpperCase()); }
-                    catch (IllegalArgumentException e) { return null; }
-                })
-                .filter(s -> s != null)
+                .flatMap(s -> expandStatusAlias(s.toUpperCase()).stream())
+                .distinct()
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Expands grouped display aliases into their constituent raw statuses.
+     * ONGOING  → [ACTIVE]
+     * UPCOMING → [PENDING, AWAITING_APPROVAL, CONFIRMED]
+     * Any raw BookingStatus value is returned as-is.
+     * Unrecognised values are silently dropped.
+     */
+    private List<BookingStatus> expandStatusAlias(String alias) {
+        return switch (alias) {
+            case "ONGOING"  -> List.of(BookingStatus.ACTIVE);
+            case "UPCOMING" -> List.of(BookingStatus.PENDING, BookingStatus.AWAITING_APPROVAL, BookingStatus.CONFIRMED);
+            default -> {
+                try { yield List.of(BookingStatus.valueOf(alias)); }
+                catch (IllegalArgumentException e) { yield List.of(); }
+            }
+        };
     }
 
     private BookingResponse mapToFullResponse(Booking booking) {
@@ -655,10 +670,26 @@ public class BookingService {
                 .dayAmount(booking.getDayAmount())
                 .totalAmount(booking.getTotalAmount())
                 .status(booking.getStatus().name())
+                .displayStatus(toDisplayStatus(booking.getStatus()))
                 .createdAt(booking.getCreatedAt() != null ? booking.getCreatedAt().toString() : null)
                 .isOverdue(booking.getStatus() == BookingStatus.ACTIVE
                         && booking.getEndDate().isBefore(java.time.LocalDate.now()))
                 .build();
+    }
+
+    /**
+     * Maps raw BookingStatus to the grouped display label used in the UI.
+     * ONGOING  = actively rented out (ACTIVE)
+     * UPCOMING = payment captured or confirmed, not yet started (PENDING, AWAITING_APPROVAL, CONFIRMED)
+     */
+    private String toDisplayStatus(BookingStatus status) {
+        return switch (status) {
+            case ACTIVE -> "ONGOING";
+            case PENDING, AWAITING_APPROVAL, CONFIRMED -> "UPCOMING";
+            case COMPLETED -> "COMPLETED";
+            case REJECTED -> "REJECTED";
+            case CANCELLED -> "CANCELLED";
+        };
     }
 
     private PagedResponse<BookingListResponse> buildListPagedResponse(Page<Booking> page) {

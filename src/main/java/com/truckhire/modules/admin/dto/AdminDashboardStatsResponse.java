@@ -20,10 +20,12 @@ public class AdminDashboardStatsResponse {
     private long activeOwnerCount;
 
     // Booking Status widget
+    private long totalBookings;       // sum of all booking slices — use as pie chart total
     private long ongoingBookings;
     private long completedBookings;
     private long upcomingBookings;
     private long rejectedBookings;
+    private long cancelledBookings;
 
     // Vehicle Availability widget
     private long availableVehicles;

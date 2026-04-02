@@ -112,6 +112,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             "AND u.status = 'ACTIVE' AND u.deletedAt IS NULL")
     long countActiveAdmins();
 
+    // Admin dashboard: total non-deleted users across all roles (matches GET /admin/users totalElements)
+    long countByDeletedAtIsNull();
+
     // Admin dashboard: count non-deleted users by role name
     long countByRole_NameAndDeletedAtIsNull(String roleName);
 

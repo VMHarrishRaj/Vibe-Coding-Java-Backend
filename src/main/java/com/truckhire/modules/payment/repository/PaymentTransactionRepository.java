@@ -135,4 +135,15 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
               AND pt.status IN ('PAID_OUT', 'PAYOUT_PENDING')
             """)
     BigDecimal sumOwnerEarnings(@Param("ownerId") UUID ownerId);
+
+    // Admin dashboard: total platform revenue = sum of all PAID CHARGE + MILEAGE_TOPUP transactions.
+    // Uses payment_transactions as single source of truth — matches exactly what the invoice screen shows.
+    // Intentionally NOT filtered by booking status: a booking can be ACTIVE with payment already captured.
+    @Query("""
+            SELECT COALESCE(SUM(pt.amount), 0)
+            FROM PaymentTransaction pt
+            WHERE pt.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND pt.status = 'PAID'
+            """)
+    BigDecimal sumTotalPlatformRevenue();
 }
