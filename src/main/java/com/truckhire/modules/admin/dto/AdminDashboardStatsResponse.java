@@ -14,14 +14,13 @@ import java.math.BigDecimal;
 public class AdminDashboardStatsResponse {
     // KPI cards
     private BigDecimal totalRevenue;
-    private long activeBookings;
     private long totalVehicles;
     private long totalClients;
     private long activeOwnerCount;
 
     // Booking Status widget
     private long totalBookings;       // sum of all booking slices — use as pie chart total
-    private long ongoingBookings;
+    private long ongoingBookings;     // KPI card "Ongoing Bookings" + widget slice
     private long completedBookings;
     private long upcomingBookings;
     private long rejectedBookings;
