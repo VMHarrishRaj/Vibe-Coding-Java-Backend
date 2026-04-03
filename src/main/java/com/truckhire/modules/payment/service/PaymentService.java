@@ -492,6 +492,9 @@ public class PaymentService {
         String gatewayOrderId = adapter.createOrder(mileageAmount, currency,
                 booking.getBookingNumber() + "-MILES");
 
+        long invoiceSeq = transactionRepository.nextInvoiceSequence();
+        String invoiceNumber = String.format("INV%03d", invoiceSeq);
+
         PaymentTransaction txn = PaymentTransaction.builder()
                 .booking(booking)
                 .gateway(gateway)
@@ -500,6 +503,7 @@ public class PaymentService {
                 .currency(currency)
                 .status(PaymentStatus.PENDING)
                 .type(PaymentType.MILEAGE_TOPUP)
+                .invoiceNumber(invoiceNumber)
                 .build();
         transactionRepository.save(txn);
 
@@ -908,6 +912,7 @@ public class PaymentService {
                 .totalBookingAmount(isMileage ? booking.getTotalAmount() : null)
                 .mileageTransaction(mileageDetail)
                 .combinedSummary(combinedSummary)
+                .invoices(buildInvoiceEntries(txn, mileageDetail))
                 .booking(com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.BookingDetail.builder()
                         .id(booking.getId().toString())
                         .startDate(booking.getStartDate().toString())
@@ -1080,6 +1085,45 @@ public class PaymentService {
                 .settlementStatus(resolveSettlementStatus(charge))
                 .hasMileage(hasMileage)
                 .build();
+    }
+
+    private java.util.List<com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.InvoiceEntry> buildInvoiceEntries(
+            PaymentTransaction charge,
+            com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.MileageDetail mileageDetail) {
+
+        java.util.List<com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.InvoiceEntry> entries = new java.util.ArrayList<>();
+
+        // Mileage first (most recent) — only if it exists
+        if (mileageDetail != null) {
+            entries.add(com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.InvoiceEntry.builder()
+                    .id(mileageDetail.getId())
+                    .invoiceNumber(mileageDetail.getInvoiceNumber())  // e.g. INV021
+                    .invoiceType("MILEAGE")
+                    .paymentDate(mileageDetail.getPaymentDate())
+                    .paymentStatus(mileageDetail.getPaymentStatus())
+                    .settlementStatus(mileageDetail.getSettlementStatus())
+                    .amount(mileageDetail.getMileageAmount())
+                    .ownerShare(mileageDetail.getOwnerShare())
+                    .platformShare(mileageDetail.getPlatformShare())
+                    .transactionId(null)
+                    .build());
+        }
+
+        // Day-rate charge always present
+        entries.add(com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.InvoiceEntry.builder()
+                .id(charge.getId().toString())
+                .invoiceNumber(charge.getInvoiceNumber())
+                .invoiceType("DAY_RATE")
+                .paymentDate(charge.getCreatedAt() != null ? charge.getCreatedAt().toString() : null)
+                .paymentStatus(charge.getStatus().name())
+                .settlementStatus(resolveSettlementStatus(charge))
+                .amount(charge.getAmount())
+                .ownerShare(charge.getOwnerAmount())
+                .platformShare(charge.getPlatformFee())
+                .transactionId(charge.getGatewayPaymentId())
+                .build());
+
+        return entries;
     }
 
     private String resolveSettlementStatus(PaymentTransaction txn) {

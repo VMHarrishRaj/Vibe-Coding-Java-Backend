@@ -51,6 +51,13 @@ public class AdminInvoiceDetailResponse {
     // Combined summary across CHARGE + MILEAGE (always present when called with a CHARGE id)
     private CombinedSummary combinedSummary;
 
+    /**
+     * All invoices for this booking in a consistent shape, most recent first.
+     * Use this array to render invoice cards — both DAY_RATE and MILEAGE use the same structure.
+     * Size 1 when no mileage; size 2 when mileage exists (mileage first, day-rate second).
+     */
+    private java.util.List<InvoiceEntry> invoices;
+
     // Nested booking info
     private BookingDetail booking;
 
@@ -137,5 +144,26 @@ public class AdminInvoiceDetailResponse {
         private BigDecimal totalPaid;               // sum of all the above
         private BigDecimal ownerShare;              // sum across both transactions
         private BigDecimal platformShare;           // sum across both transactions
+    }
+
+    /**
+     * Uniform invoice entry — same shape for both DAY_RATE and MILEAGE invoices.
+     * Use invoices[] array to render invoice cards on the detail page.
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class InvoiceEntry {
+        private String id;              // transaction UUID
+        private String invoiceNumber;   // INV001, INV002...
+        private String invoiceType;     // "DAY_RATE" or "MILEAGE"
+        private String paymentDate;
+        private String paymentStatus;
+        private String settlementStatus;
+        private BigDecimal amount;      // amount for this specific invoice
+        private BigDecimal ownerShare;
+        private BigDecimal platformShare;
+        private String transactionId;   // gateway payment ID (pi_xxx or pay_xxx)
     }
 }
