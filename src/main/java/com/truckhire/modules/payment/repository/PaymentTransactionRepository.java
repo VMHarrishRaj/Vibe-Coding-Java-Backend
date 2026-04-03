@@ -42,9 +42,10 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             JOIN FETCH t.booking b
             JOIN FETCH b.renter
             WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND t.status NOT IN ('CANCELLED', 'REFUNDED')
             ORDER BY t.createdAt DESC
             """,
-            countQuery = "SELECT COUNT(t) FROM PaymentTransaction t JOIN t.booking b WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')")
+            countQuery = "SELECT COUNT(t) FROM PaymentTransaction t JOIN t.booking b WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP') AND t.status NOT IN ('CANCELLED', 'REFUNDED')")
     Page<PaymentTransaction> findAllChargesWithDetails(Pageable pageable);
 
     @Query(value = """
@@ -52,12 +53,14 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             JOIN FETCH t.booking b
             JOIN FETCH b.renter
             WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND t.status NOT IN ('CANCELLED', 'REFUNDED')
               AND (:q IS NULL OR LOWER(t.invoiceNumber) LIKE :q OR LOWER(b.bookingNumber) LIKE :q)
             ORDER BY t.createdAt DESC
             """,
             countQuery = """
             SELECT COUNT(t) FROM PaymentTransaction t JOIN t.booking b
             WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND t.status NOT IN ('CANCELLED', 'REFUNDED')
               AND (:q IS NULL OR LOWER(t.invoiceNumber) LIKE :q OR LOWER(b.bookingNumber) LIKE :q)
             """)
     Page<PaymentTransaction> searchChargesWithDetails(@Param("q") String q, Pageable pageable);
@@ -101,12 +104,14 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     long nextInvoiceSequence();
 
     // RENTER payment history — CHARGE + MILEAGE_TOPUP + REFUND transactions for bookings they rented
+    // CANCELLED charges excluded (no money moved); REFUNDED charges included so renter sees refund history
     @Query("""
             SELECT t FROM PaymentTransaction t
             JOIN FETCH t.booking b
             JOIN FETCH b.truck
             WHERE b.renter.id = :userId
               AND t.type IN ('CHARGE', 'MILEAGE_TOPUP', 'REFUND')
+              AND t.status != 'CANCELLED'
             ORDER BY t.createdAt DESC
             """)
     org.springframework.data.domain.Page<PaymentTransaction> findRenterPaymentHistory(
@@ -156,9 +161,10 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             JOIN FETCH t.booking b
             JOIN FETCH b.renter
             WHERE t.type = 'CHARGE'
+              AND t.status NOT IN ('CANCELLED', 'REFUNDED')
             ORDER BY t.createdAt DESC
             """,
-            countQuery = "SELECT COUNT(t) FROM PaymentTransaction t WHERE t.type = 'CHARGE'")
+            countQuery = "SELECT COUNT(t) FROM PaymentTransaction t WHERE t.type = 'CHARGE' AND t.status NOT IN ('CANCELLED', 'REFUNDED')")
     Page<PaymentTransaction> findAllChargeOnlyWithDetails(Pageable pageable);
 
     @Query(value = """
@@ -166,12 +172,14 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             JOIN FETCH t.booking b
             JOIN FETCH b.renter
             WHERE t.type = 'CHARGE'
+              AND t.status NOT IN ('CANCELLED', 'REFUNDED')
               AND (:q IS NULL OR LOWER(t.invoiceNumber) LIKE :q OR LOWER(b.bookingNumber) LIKE :q)
             ORDER BY t.createdAt DESC
             """,
             countQuery = """
             SELECT COUNT(t) FROM PaymentTransaction t JOIN t.booking b
             WHERE t.type = 'CHARGE'
+              AND t.status NOT IN ('CANCELLED', 'REFUNDED')
               AND (:q IS NULL OR LOWER(t.invoiceNumber) LIKE :q OR LOWER(b.bookingNumber) LIKE :q)
             """)
     Page<PaymentTransaction> searchChargeOnlyWithDetails(@Param("q") String q, Pageable pageable);

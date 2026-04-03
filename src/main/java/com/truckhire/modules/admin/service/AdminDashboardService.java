@@ -65,6 +65,7 @@ public class AdminDashboardService {
         return AdminDashboardStatsResponse.builder()
                 .totalRevenue(totalRevenue)
                 .totalVehicles(totalVehicles)
+                .approvedVehicles(approvedVehicles)
                 .totalClients(totalClients)
                 .activeOwnerCount(activeOwnerCount)
                 .totalBookings(totalBookings)

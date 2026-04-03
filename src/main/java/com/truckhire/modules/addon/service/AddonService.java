@@ -83,6 +83,24 @@ public class AddonService {
         log.info("Admin soft-deleted addon service type: id={}", id);
     }
 
+    public AddonServiceTypeResponse getAddonServiceType(UUID id) {
+        AddonServiceType entity = addonServiceTypeRepo.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new ResourceNotFoundException("AddonServiceType", "id", id));
+        return mapAddonServiceType(entity);
+    }
+
+    @Transactional
+    public AddonServiceTypeResponse toggleAddonServiceTypeStatus(UUID id, String status) {
+        if (!"ACTIVE".equals(status) && !"INACTIVE".equals(status)) {
+            throw new BusinessException("INVALID_STATUS", "Status must be ACTIVE or INACTIVE");
+        }
+        AddonServiceType entity = addonServiceTypeRepo.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new ResourceNotFoundException("AddonServiceType", "id", id));
+        entity.setStatus(status);
+        log.info("Admin toggled addon service type status: id={}, status={}", id, status);
+        return mapAddonServiceType(addonServiceTypeRepo.save(entity));
+    }
+
     public PagedResponse<AddonServiceTypeResponse> listAddonServiceTypes(AddonType typeFilter, Pageable pageable) {
         Page<AddonServiceType> page = typeFilter != null
                 ? addonServiceTypeRepo.findByTypeAndDeletedAtIsNull(typeFilter, pageable)

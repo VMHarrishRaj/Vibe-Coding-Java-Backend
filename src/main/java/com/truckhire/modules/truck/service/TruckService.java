@@ -422,18 +422,17 @@ public class TruckService {
         Truck truck = truckRepository.findByIdAndDeletedAtIsNull(truckId)
                 .orElseThrow(() -> new ResourceNotFoundException("Truck", "id", truckId));
 
-        // Cover photo — reuse the same batch query with a single-element list
-        String coverPhotoUrl = null;
-        List<Object[]> photos = truckDocumentRepository.findFirstPhotoPerTruck(List.of(truckId));
-        if (!photos.isEmpty()) {
-            coverPhotoUrl = baseUrl + "/api/v1/files/" + photos.get(0)[1];
-        }
+        // All photos — oldest first so cover photo (first upload) is index 0
+        List<String> photoUrls = truckDocumentRepository.findAllPhotosByTruckId(truckId).stream()
+                .map(doc -> baseUrl + "/api/v1/files/" + doc.getFilePath())
+                .collect(Collectors.toList());
+        String coverPhotoUrl = photoUrls.isEmpty() ? null : photoUrls.get(0);
 
         // Availability — reuse the same CONFIRMED/ACTIVE batch query with a single-element list
         List<Booking> bookings = bookingRepository.findCurrentOrUpcomingBookingsByTruckIds(List.of(truckId));
         Booking activeBooking = bookings.isEmpty() ? null : bookings.get(0);
 
-        return mapToDetailResponse(truck, coverPhotoUrl, activeBooking);
+        return mapToDetailResponse(truck, coverPhotoUrl, photoUrls, activeBooking);
     }
 
     /**
@@ -676,13 +675,13 @@ public class TruckService {
     }
 
     private TruckResponse mapToResponse(Truck truck) {
-        return mapToDetailResponse(truck, null, null);
+        return mapToDetailResponse(truck, null, List.of(), null);
     }
 
     /**
      * Build a TruckResponse with optional cover photo URL and availability enrichment.
      */
-    private TruckResponse mapToDetailResponse(Truck truck, String coverPhotoUrl, Booking activeBooking) {
+    private TruckResponse mapToDetailResponse(Truck truck, String coverPhotoUrl, List<String> photoUrls, Booking activeBooking) {
         TruckResponse.TruckResponseBuilder builder = TruckResponse.builder()
                 .id(truck.getId().toString())
                 .ownerId(truck.getOwner().getId().toString())
@@ -710,7 +709,9 @@ public class TruckService {
                 .description(truck.getDescription())
                 .insured(truck.isInsured())
                 .createdAt(truck.getCreatedAt() != null ? truck.getCreatedAt().toString() : null)
+                .updatedAt(truck.getUpdatedAt() != null ? truck.getUpdatedAt().toString() : null)
                 .coverPhotoUrl(coverPhotoUrl)
+                .photoUrls(photoUrls)
                 .pickupLocations(truck.getPickupLocations().stream()
                         .map(PickupLocation::getCity)
                         .collect(Collectors.toList()));
