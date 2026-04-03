@@ -55,6 +55,16 @@ public class AdminAddonController {
     }
 
     /**
+     * GET /admin/addons/{id}
+     * Fetch a single addon service type by ID — used to prefill the edit form.
+     */
+    @GetMapping("/{id}")
+    public ResponseEntity<ApiResponse<AddonServiceTypeResponse>> getAddon(@PathVariable UUID id) {
+        AddonServiceTypeResponse result = addonService.getAddonServiceType(id);
+        return ResponseEntity.ok(ApiResponse.success("Addon service retrieved", result));
+    }
+
+    /**
      * PUT /admin/addons/{id}
      * Update an existing addon service type.
      */
@@ -64,6 +74,19 @@ public class AdminAddonController {
             @Valid @RequestBody AdminAddonServiceTypeRequest request) {
         AddonServiceTypeResponse result = addonService.updateAddonServiceType(id, request);
         return ResponseEntity.ok(ApiResponse.success("Addon service updated", result));
+    }
+
+    /**
+     * PUT /admin/addons/{id}/status
+     * Toggle an addon service type ACTIVE or INACTIVE.
+     * INACTIVE plans are excluded from renter-facing addon previews and booking validation.
+     */
+    @PutMapping("/{id}/status")
+    public ResponseEntity<ApiResponse<AddonServiceTypeResponse>> toggleAddonStatus(
+            @PathVariable UUID id,
+            @RequestParam String status) {
+        AddonServiceTypeResponse result = addonService.toggleAddonServiceTypeStatus(id, status);
+        return ResponseEntity.ok(ApiResponse.success("Addon service status updated", result));
     }
 
     /**
