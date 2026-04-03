@@ -246,6 +246,16 @@ public class PaymentService {
      */
     @Transactional
     public void refundIfPaid(UUID bookingId) {
+        // If payment was initiated but never captured, mark it CANCELLED — no gateway call needed
+        Optional<PaymentTransaction> pendingCharge = transactionRepository
+                .findByBookingIdAndTypeAndStatus(bookingId, PaymentType.CHARGE, PaymentStatus.PENDING);
+        if (pendingCharge.isPresent()) {
+            pendingCharge.get().setStatus(PaymentStatus.CANCELLED);
+            transactionRepository.save(pendingCharge.get());
+            log.info("Pending charge voided on cancellation: bookingId={}", bookingId);
+            return;
+        }
+
         Optional<PaymentTransaction> chargeOpt = transactionRepository
                 .findByBookingIdAndTypeAndStatus(bookingId, PaymentType.CHARGE, PaymentStatus.SUCCEEDED);
 

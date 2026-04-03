@@ -1,5 +1,6 @@
 package com.truckhire.modules.truck.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -10,11 +11,13 @@ import java.util.List;
 
 /**
  * Response DTO for full truck detail — GET /trucks/{id}
+ * Always includes null fields so frontend can display a dash for missing optional values.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonInclude(JsonInclude.Include.ALWAYS)
 public class TruckResponse {
 
     private String id;
@@ -60,10 +63,12 @@ public class TruckResponse {
 
     // ── Metadata ──
     private String createdAt;
+    private String updatedAt;
 
     // ── Availability (enriched at query time) ──
     private String availabilityStatus;   // "AVAILABLE", "RENTED", "UNAVAILABLE"
     private String rentedUntil;          // ISO date, only when RENTED
     private String unavailableReason;    // only when UNAVAILABLE
     private String coverPhotoUrl;
+    private List<String> photoUrls;      // all uploaded photos, cover photo first
 }

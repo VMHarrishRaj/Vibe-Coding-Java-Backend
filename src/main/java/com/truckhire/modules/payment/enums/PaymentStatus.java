@@ -6,6 +6,7 @@ public enum PaymentStatus {
     SUCCEEDED,
     FAILED,
     REFUNDED,
+    CANCELLED,      // payment was initiated but booking was cancelled before capture — no money moved
     PAYOUT_PENDING,
     PAID_OUT
 }

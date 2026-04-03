@@ -15,6 +15,7 @@ public class AdminDashboardStatsResponse {
     // KPI cards
     private BigDecimal totalRevenue;
     private long totalVehicles;
+    private long approvedVehicles;   // APPROVED trucks only — use this for the "Approved Vehicles" KPI card
     private long totalClients;
     private long activeOwnerCount;
 
