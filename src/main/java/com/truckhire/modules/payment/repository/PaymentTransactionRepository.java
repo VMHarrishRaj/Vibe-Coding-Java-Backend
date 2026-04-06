@@ -142,14 +142,13 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             """)
     BigDecimal sumOwnerEarnings(@Param("ownerId") UUID ownerId);
 
-    // Admin dashboard: total platform revenue = sum of all PAID CHARGE + MILEAGE_TOPUP transactions.
-    // Uses payment_transactions as single source of truth — matches exactly what the invoice screen shows.
+    // Admin dashboard: total platform revenue = sum of all CHARGE + MILEAGE_TOPUP transactions (both paid and pending).
     // Intentionally NOT filtered by booking status: a booking can be ACTIVE with payment already captured.
     @Query("""
             SELECT COALESCE(SUM(pt.amount), 0)
             FROM PaymentTransaction pt
             WHERE pt.type IN ('CHARGE', 'MILEAGE_TOPUP')
-              AND pt.status = 'SUCCEEDED'
+              AND pt.status IN ('SUCCEEDED', 'PENDING')
             """)
     BigDecimal sumTotalPlatformRevenue();
 
@@ -160,7 +159,7 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
                    COALESCE(SUM(amount), 0) AS revenue
             FROM payment_transactions
             WHERE type IN ('CHARGE', 'MILEAGE_TOPUP')
-              AND status = 'SUCCEEDED'
+              AND status IN ('SUCCEEDED', 'PENDING')
               AND created_at >= NOW() - INTERVAL '12 months'
             GROUP BY TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM')
             ORDER BY month ASC
@@ -246,4 +245,42 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             WHERE b.id = :bookingId AND t.type = 'MILEAGE_TOPUP'
             """)
     Optional<PaymentTransaction> findMileageByBookingId(@Param("bookingId") UUID bookingId);
+
+    // ── by-booking page widget stats ──
+
+    /** Total amount of all SUCCEEDED CHARGE + MILEAGE_TOPUP (money actually captured). */
+    @Query("""
+            SELECT COALESCE(SUM(t.amount), 0)
+            FROM PaymentTransaction t
+            WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND t.status = 'SUCCEEDED'
+            """)
+    BigDecimal sumTotalPaidCharges();
+
+    /** Sum of PENDING CHARGE amounts (bookings not yet paid). */
+    @Query("""
+            SELECT COALESCE(SUM(t.amount), 0)
+            FROM PaymentTransaction t
+            WHERE t.type = 'CHARGE'
+              AND t.status = 'PENDING'
+            """)
+    BigDecimal sumPendingCharges();
+
+    /** Sum of platform fee on all SUCCEEDED transactions. */
+    @Query("""
+            SELECT COALESCE(SUM(t.platformFee), 0)
+            FROM PaymentTransaction t
+            WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND t.status = 'SUCCEEDED'
+            """)
+    BigDecimal sumPlatformFees();
+
+    /** Sum of owner payouts that have been PAID_OUT. */
+    @Query("""
+            SELECT COALESCE(SUM(t.ownerAmount), 0)
+            FROM PaymentTransaction t
+            WHERE t.type = 'PAYOUT'
+              AND t.status = 'PAID_OUT'
+            """)
+    BigDecimal sumSettledOwnerPayouts();
 }
