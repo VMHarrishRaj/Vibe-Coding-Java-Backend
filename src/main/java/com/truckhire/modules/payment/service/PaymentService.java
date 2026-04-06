@@ -982,7 +982,7 @@ public class PaymentService {
      * Supports the same search + settlementStatus filters as the flat invoice list.
      */
     @Transactional(readOnly = true)
-    public com.truckhire.common.dto.PagedResponse<com.truckhire.modules.payment.dto.AdminBookingInvoiceResponse>
+    public com.truckhire.modules.payment.dto.AdminPaymentsByBookingResponse
             getAdminPaymentsByBooking(String search, String settlementStatus,
                                      org.springframework.data.domain.Pageable pageable) {
 
@@ -1027,13 +1027,34 @@ public class PaymentService {
                         .map(charge -> mapToBookingInvoiceResponse(charge, mileageByBookingId.get(charge.getBooking().getId())))
                         .collect(java.util.stream.Collectors.toList());
 
-        return com.truckhire.common.dto.PagedResponse.<com.truckhire.modules.payment.dto.AdminBookingInvoiceResponse>builder()
-                .content(content)
-                .pageNumber(page.getNumber())
-                .pageSize(page.getSize())
-                .totalElements(page.getTotalElements())
-                .totalPages(page.getTotalPages())
-                .last(page.isLast())
+        com.truckhire.common.dto.PagedResponse<com.truckhire.modules.payment.dto.AdminBookingInvoiceResponse> pagedResponse =
+                com.truckhire.common.dto.PagedResponse.<com.truckhire.modules.payment.dto.AdminBookingInvoiceResponse>builder()
+                        .content(content)
+                        .pageNumber(page.getNumber())
+                        .pageSize(page.getSize())
+                        .totalElements(page.getTotalElements())
+                        .totalPages(page.getTotalPages())
+                        .last(page.isLast())
+                        .build();
+
+        // Widget stats — computed globally (not filtered by page/search) to always show platform-wide totals
+        // totalPaid = actual money captured (SUCCEEDED)
+        // totalPending = bookings not yet paid (PENDING)
+        // totalRevenue = Gross Expected Revenue (SUCCEEDED + PENDING)
+        java.math.BigDecimal totalPaid     = transactionRepository.sumTotalPaidCharges();
+        java.math.BigDecimal totalPending  = transactionRepository.sumPendingCharges();
+        java.math.BigDecimal totalRevenue  = totalPaid.add(totalPending);
+        
+        java.math.BigDecimal platformShare = transactionRepository.sumPlatformFees();
+        java.math.BigDecimal ownerShare    = transactionRepository.sumSettledOwnerPayouts();
+
+        return com.truckhire.modules.payment.dto.AdminPaymentsByBookingResponse.builder()
+                .totalRevenue(totalRevenue)
+                .totalPaid(totalPaid)
+                .totalPending(totalPending)
+                .totalPlatformShare(platformShare)
+                .totalOwnerShare(ownerShare)
+                .invoices(pagedResponse)
                 .build();
     }
 

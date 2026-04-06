@@ -3,7 +3,7 @@ package com.truckhire.modules.payment.controller;
 import com.truckhire.common.dto.ApiResponse;
 import com.truckhire.common.dto.PagedResponse;
 import com.truckhire.common.util.SecurityUtils;
-import com.truckhire.modules.payment.dto.AdminBookingInvoiceResponse;
+import com.truckhire.modules.payment.dto.AdminPaymentsByBookingResponse;
 import com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse;
 import com.truckhire.modules.payment.dto.AdminPaymentListResponse;
 import com.truckhire.modules.payment.dto.PlatformSettingsRequest;
@@ -110,11 +110,11 @@ public class PlatformAdminController {
      * Supports same search and settlementStatus filters as the flat invoice list.
      */
     @GetMapping("/admin/payments/by-booking")
-    public ResponseEntity<ApiResponse<PagedResponse<AdminBookingInvoiceResponse>>> getAdminPaymentsByBooking(
+    public ResponseEntity<ApiResponse<AdminPaymentsByBookingResponse>> getAdminPaymentsByBooking(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String settlementStatus,
             @PageableDefault(size = 20) Pageable pageable) {
-        PagedResponse<AdminBookingInvoiceResponse> response =
+        AdminPaymentsByBookingResponse response =
                 paymentService.getAdminPaymentsByBooking(search, settlementStatus, pageable);
         return ResponseEntity.ok(ApiResponse.success("Booking invoices retrieved", response));
     }
