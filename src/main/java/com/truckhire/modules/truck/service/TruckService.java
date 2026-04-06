@@ -118,17 +118,17 @@ public class TruckService {
                 .status(TruckStatus.PENDING_APPROVAL)
                 .build();
 
-        Truck saved = truckRepository.save(truck);
-        log.info("Truck added: id={}, owner={}, reg={}",
-                saved.getId(), ownerId, saved.getRegistrationNumber());
-
-        // Save pickup locations if provided
+        // Add pickup locations if provided
         if (request.getPickupLocations() != null && !request.getPickupLocations().isEmpty()) {
             request.getPickupLocations().stream()
                     .filter(city -> city != null && !city.isBlank())
-                    .map(city -> PickupLocation.builder().truck(saved).city(city.trim()).build())
-                    .forEach(pickupLocationRepository::save);
+                    .map(city -> PickupLocation.builder().truck(truck).city(city.trim()).build())
+                    .forEach(loc -> truck.getPickupLocations().add(loc));
         }
+
+        Truck saved = truckRepository.save(truck);
+        log.info("Truck added: id={}, owner={}, reg={}",
+                saved.getId(), ownerId, saved.getRegistrationNumber());
 
         // If a photo was included with the creation request, store it immediately
         if (photo != null && !photo.isEmpty()) {
@@ -204,11 +204,24 @@ public class TruckService {
 
         // Pickup locations: null = no change; empty list = remove all; non-empty = replace all
         if (request.getPickupLocations() != null) {
-            pickupLocationRepository.deleteByTruckId(truck.getId());
-            request.getPickupLocations().stream()
+            List<String> newCities = request.getPickupLocations().stream()
                     .filter(city -> city != null && !city.isBlank())
-                    .map(city -> PickupLocation.builder().truck(truck).city(city.trim()).build())
-                    .forEach(pickupLocationRepository::save);
+                    .map(String::trim)
+                    .distinct()
+                    .toList();
+            
+            // Remove cities not in the new list
+            truck.getPickupLocations().removeIf(loc -> !newCities.contains(loc.getCity()));
+            
+            // Add new cities not in the current list
+            List<String> existingCities = truck.getPickupLocations().stream()
+                    .map(PickupLocation::getCity)
+                    .toList();
+            
+            newCities.stream()
+                    .filter(city -> !existingCities.contains(city))
+                    .map(city -> PickupLocation.builder().truck(truck).city(city).build())
+                    .forEach(loc -> truck.getPickupLocations().add(loc));
         }
 
         Truck saved = truckRepository.save(truck);
