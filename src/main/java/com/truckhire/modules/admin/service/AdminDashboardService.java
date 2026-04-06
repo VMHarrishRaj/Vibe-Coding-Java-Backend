@@ -82,7 +82,7 @@ public class AdminDashboardService {
 
     @Transactional(readOnly = true)
     public AdminRevenueChartResponse getRevenueChart() {
-        List<Object[]> rows = bookingRepository.sumRevenueGroupedByMonth();
+        List<Object[]> rows = transactionRepository.sumRevenueGroupedByMonth();
         List<MonthlyRevenue> data = rows.stream()
                 .map(row -> MonthlyRevenue.builder()
                         .month((String) row[0])

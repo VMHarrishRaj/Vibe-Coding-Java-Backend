@@ -153,6 +153,20 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             """)
     BigDecimal sumTotalPlatformRevenue();
 
+    // Admin dashboard: monthly revenue for last 12 months — same source as sumTotalPlatformRevenue().
+    // Returns [month (YYYY-MM), revenue] pairs ordered oldest first.
+    @Query(value = """
+            SELECT TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM') AS month,
+                   COALESCE(SUM(amount), 0) AS revenue
+            FROM payment_transactions
+            WHERE type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND status = 'SUCCEEDED'
+              AND created_at >= NOW() - INTERVAL '12 months'
+            GROUP BY TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM')
+            ORDER BY month ASC
+            """, nativeQuery = true)
+    List<Object[]> sumRevenueGroupedByMonth();
+
     // ── Grouped invoice view (GET /admin/payments/by-booking) ──
     // Returns only CHARGE transactions (one per booking). Mileage is fetched separately via findMileageByBookingIds.
 
