@@ -28,6 +28,7 @@ public class MyPaymentHistoryResponse {
     private String id;              // payment_transaction UUID
     private String bookingId;       // booking UUID
     private String bookingNumber;   // BK001, BK002...
+    private String invoiceNumber;   // INV001, INV002... — from the paired CHARGE transaction (OWNER), or own invoice (RENTER)
     private String truckId;         // truck UUID — for mobile deep-link; null for RENTER
     private String truckModel;      // e.g. "Tata 407" — null if truck deleted
     private String startDate;       // booking start date (OWNER only)

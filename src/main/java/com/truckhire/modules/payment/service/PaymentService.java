@@ -1226,11 +1226,26 @@ public class PaymentService {
         com.truckhire.modules.booking.entity.Booking booking = txn.getBooking();
         com.truckhire.modules.truck.entity.Truck truck = booking.getTruck();
 
+        // For PAYOUT transactions the invoiceNumber on the row itself is null (payouts are not
+        // invoiced separately). Surface the paired CHARGE transaction's invoiceNumber instead —
+        // that is the invoice the renter paid and what the owner recognises as the booking invoice.
+        // For CHARGE / MILEAGE_TOPUP / REFUND rows the invoiceNumber is on the transaction itself.
+        String invoiceNumber;
+        if (txn.getType() == PaymentType.PAYOUT) {
+            invoiceNumber = transactionRepository
+                    .findByBookingIdAndTypeAndStatus(booking.getId(), PaymentType.CHARGE, PaymentStatus.SUCCEEDED)
+                    .map(PaymentTransaction::getInvoiceNumber)
+                    .orElse(null);
+        } else {
+            invoiceNumber = txn.getInvoiceNumber();
+        }
+
         com.truckhire.modules.payment.dto.MyPaymentHistoryResponse.MyPaymentHistoryResponseBuilder builder =
                 com.truckhire.modules.payment.dto.MyPaymentHistoryResponse.builder()
                 .id(txn.getId().toString())
                 .bookingId(booking.getId().toString())
                 .bookingNumber(booking.getBookingNumber())
+                .invoiceNumber(invoiceNumber)
                 .truckId(truck != null ? truck.getId().toString() : null)
                 .truckModel(truck != null ? truck.getModel() : null)
                 .amount(txn.getAmount())

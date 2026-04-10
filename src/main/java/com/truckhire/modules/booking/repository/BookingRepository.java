@@ -151,6 +151,21 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     // Owner dashboard: count bookings in a given status for an owner
     long countByOwnerIdAndStatus(UUID ownerId, BookingStatus status);
 
+    /**
+     * Owner dashboard: count bookings per status in one query.
+     * Returns [status, count] pairs — only statuses with at least one row are returned.
+     */
+    @Query("""
+            SELECT b.status, COUNT(b)
+            FROM Booking b
+            WHERE b.owner.id = :ownerId
+              AND b.status IN :statuses
+            GROUP BY b.status
+            """)
+    List<Object[]> countByOwnerIdAndStatuses(
+            @Param("ownerId") UUID ownerId,
+            @Param("statuses") List<BookingStatus> statuses);
+
     // Owner dashboard: sum of total_amount for all COMPLETED bookings (earnings)
     @Query("SELECT COALESCE(SUM(b.totalAmount), 0) FROM Booking b WHERE b.owner.id = :ownerId AND b.status = 'COMPLETED'")
     BigDecimal sumTotalAmountByOwnerIdAndCompleted(@Param("ownerId") UUID ownerId);

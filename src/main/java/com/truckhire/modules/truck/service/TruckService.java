@@ -314,37 +314,94 @@ public class TruckService {
     /**
      * Get owner dashboard summary.
      *
-     * Counts trucks per status in one GROUP BY query, then maps results
-     * into the dashboard DTO. Booking and earnings fields are stubbed at 0
-     * until Phase 5/6 are implemented.
+     * Returns:
+     * - Owner profile (name, email, phone, profileImageUrl, stripeConnected)
+     * - Truck counts per status
+     * - Booking counts per stage (AWAITING_APPROVAL, CONFIRMED, ACTIVE, COMPLETED) + total
+     * - Earnings: total lifetime earnings and pending payout amount
+     * - Monthly revenue for the last 12 months (YYYY-MM → ownerAmount sum)
+     *   Months with no activity are omitted — frontend fills gaps as "No data available"
      */
     @Transactional(readOnly = true)
     public OwnerDashboardResponse getDashboard(UUID ownerId) {
-        List<Object[]> rows = truckRepository.countTrucksByStatusForOwner(ownerId);
+        // ── Owner profile ──
+        User owner = userRepository.findById(ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", ownerId));
 
+        // ── Truck counts ──
+        List<Object[]> truckRows = truckRepository.countTrucksByStatusForOwner(ownerId);
         long approved = 0, pending = 0, rejected = 0, inactive = 0;
-        for (Object[] row : rows) {
+        for (Object[] row : truckRows) {
             TruckStatus status = (TruckStatus) row[0];
             long count = (long) row[1];
             switch (status) {
-                case APPROVED        -> approved = count;
+                case APPROVED         -> approved = count;
                 case PENDING_APPROVAL -> pending = count;
-                case REJECTED        -> rejected = count;
-                case INACTIVE        -> inactive = count;
+                case REJECTED         -> rejected = count;
+                case INACTIVE         -> inactive = count;
             }
         }
 
-        long pendingBookings = bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.PENDING);
+        // ── Booking counts per stage (one batch query) ──
+        List<BookingStatus> trackedStatuses = List.of(
+                BookingStatus.AWAITING_APPROVAL,
+                BookingStatus.CONFIRMED,
+                BookingStatus.ACTIVE,
+                BookingStatus.COMPLETED
+        );
+        List<Object[]> bookingRows = bookingRepository.countByOwnerIdAndStatuses(ownerId, trackedStatuses);
+        long awaitingApproval = 0, confirmed = 0, active = 0, completed = 0;
+        for (Object[] row : bookingRows) {
+            BookingStatus status = (BookingStatus) row[0];
+            long count = (long) row[1];
+            switch (status) {
+                case AWAITING_APPROVAL -> awaitingApproval = count;
+                case CONFIRMED         -> confirmed = count;
+                case ACTIVE            -> active = count;
+                case COMPLETED         -> completed = count;
+                default -> { /* ignored */ }
+            }
+        }
+        long totalBookings = awaitingApproval + confirmed + active + completed;
+
+        // ── Earnings ──
         BigDecimal totalEarnings = transactionRepository.sumOwnerEarnings(ownerId);
+        BigDecimal pendingPayoutAmount = transactionRepository.sumOwnerPendingPayouts(ownerId);
+
+        // ── Monthly revenue — last 12 months ──
+        List<Object[]> revenueRows = transactionRepository.sumOwnerRevenueGroupedByMonth(ownerId);
+        List<OwnerDashboardResponse.MonthlyRevenue> monthlyRevenue = revenueRows.stream()
+                .map(row -> OwnerDashboardResponse.MonthlyRevenue.builder()
+                        .month((String) row[0])
+                        .revenue(new BigDecimal(row[1].toString()))
+                        .build())
+                .collect(Collectors.toList());
 
         return OwnerDashboardResponse.builder()
+                // profile
+                .ownerId(owner.getId().toString())
+                .fullname(owner.getFullname())
+                .email(owner.getEmail())
+                .phone(owner.getPhone())
+                .profileImageUrl(owner.getProfileImageUrl())
+                .stripeConnected(owner.getStripeAccountId() != null && !owner.getStripeAccountId().isBlank())
+                // trucks
                 .totalTrucks(approved + pending + rejected + inactive)
                 .approvedTrucks(approved)
                 .pendingTrucks(pending)
                 .rejectedTrucks(rejected)
                 .inactiveTrucks(inactive)
-                .pendingBookings(pendingBookings)
+                // bookings
+                .awaitingApprovalBookings(awaitingApproval)
+                .confirmedBookings(confirmed)
+                .activeBookings(active)
+                .completedBookings(completed)
+                .totalBookings(totalBookings)
+                // earnings
                 .totalEarnings(totalEarnings)
+                .pendingPayoutAmount(pendingPayoutAmount)
+                // monthly revenue
+                .monthlyRevenue(monthlyRevenue)
                 .build();
     }
 
