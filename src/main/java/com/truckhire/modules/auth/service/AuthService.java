@@ -234,6 +234,14 @@ public class AuthService {
                     "Incorrect password. Please try again or reset your password.");
         }
 
+        if (Role.ADMIN.equals(user.getRole().getName()) && "MOBILE".equalsIgnoreCase(request.getSource())) {
+            throw new BusinessException("UNAUTHORIZED_ACCESS", "Admins cannot login via the mobile app.");
+        }
+
+        if (!Role.ADMIN.equals(user.getRole().getName()) && "WEBAPP".equalsIgnoreCase(request.getSource())) {
+            throw new BusinessException("UNAUTHORIZED_ACCESS", "Users cannot login via the web app.");
+        }
+
         switch (user.getStatus()) {
             case ACTIVE, PENDING_VERIFICATION -> { /* proceed — PENDING_VERIFICATION users can log in but are
                                                       restricted by role-specific guards (e.g. booking requires
