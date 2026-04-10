@@ -346,7 +346,7 @@ public class PaymentService {
     // ═══════════════════════════════════════
 
     /**
-     * Triggered when a booking reaches COMPLETED (owner records odometer end).
+     * Admin-initiated payout to the owner after a booking is fully settled.
      *
      * Calculates:
      * - platformFee = totalAmount * (platformFeePercent / 100)
@@ -355,6 +355,11 @@ public class PaymentService {
      * Then initiates a transfer to the owner's linked gateway account.
      * If the owner has no gateway account linked, records a PAYOUT_PENDING transaction
      * so the admin can see the pending payout and retry it via POST /admin/bookings/{id}/payout.
+     *
+     * Guards (in order):
+     * 1. No existing payout (PAYOUT_PENDING or PAID_OUT) — prevents double payout
+     * 2. CHARGE/SUCCEEDED must exist — day rate must be collected
+     * 3. No MILEAGE_TOPUP/PENDING — mileage charge must be collected before payout
      */
     @Transactional
     public void initiateOwnerPayout(UUID bookingId) {
@@ -375,11 +380,28 @@ public class PaymentService {
                     "No completed payment found for this booking. Cannot initiate payout.");
         }
 
+        // Guard: block payout if the renter has not yet paid the mileage charge.
+        // booking.totalAmount is set at odometer return and already includes mileage,
+        // but the MILEAGE_TOPUP payment may still be PENDING (renter hasn't paid yet).
+        // Paying out before collecting mileage means the owner receives money the
+        // platform hasn't actually collected.
+        Optional<PaymentTransaction> pendingMileage = transactionRepository
+                .findByBookingIdAndTypeAndStatus(bookingId, PaymentType.MILEAGE_TOPUP, PaymentStatus.PENDING);
+        if (pendingMileage.isPresent()) {
+            throw new BusinessException("MILEAGE_PAYMENT_PENDING",
+                    "Cannot initiate payout: the renter has not yet paid the mileage charge. " +
+                    "Wait for the mileage payment to complete before releasing funds to the owner.");
+        }
+
         PaymentTransaction charge = chargeOpt.get();
         Booking booking = charge.getBooking();
         User owner = booking.getOwner();
 
-        // Use totalAmount if available (set on COMPLETED), otherwise dayAmount
+        // Use totalAmount (dayAmount + mileageAmount, set on COMPLETED) if available.
+        // By the time we reach here, mileage has already been collected (guarded above),
+        // so totalAmount is the correct full amount to pay out.
+        // Falls back to dayAmount for bookings where no mileage was driven (totalAmount
+        // remains null when costPerMile is zero or milesDriven is zero).
         BigDecimal totalAmount = booking.getTotalAmount() != null
                 ? booking.getTotalAmount()
                 : charge.getAmount();
@@ -1081,6 +1103,11 @@ public class PaymentService {
         String paymentStatus;
         if (charge.getStatus() != PaymentStatus.SUCCEEDED) {
             paymentStatus = "PENDING";
+        } else if (booking.getStatus() != com.truckhire.modules.booking.entity.BookingStatus.COMPLETED &&
+                   booking.getStatus() != com.truckhire.modules.booking.entity.BookingStatus.CANCELLED &&
+                   booking.getStatus() != com.truckhire.modules.booking.entity.BookingStatus.REJECTED) {
+            // Day charge paid, but mileage hasn't been evaluated yet
+            paymentStatus = "PARTIALLY_PAID";
         } else if (hasMileage && mileage.getStatus() != PaymentStatus.SUCCEEDED) {
             paymentStatus = "PARTIALLY_PAID";
         } else {

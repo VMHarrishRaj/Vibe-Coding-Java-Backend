@@ -143,11 +143,13 @@ public class AuthService {
                 .orElseThrow(() -> new ResourceNotFoundException("Role", "name", original.getRole()));
 
         // ── Determine initial status ──
-        // Both OWNER and RENTER start as PENDING_VERIFICATION.
-        // Renters cannot book trucks until KYC is verified (BookingService guard),
-        // so their status must reflect that pending state accurately.
-        // Admin verifies KYC → sets kycVerified=true + status=ACTIVE for both roles.
-        UserStatus initialStatus = UserStatus.PENDING_VERIFICATION;
+        // RENTERs are auto-activated on registration — the owner reviews their
+        // uploaded KYC documents when approving a booking and decides there.
+        // OWNERs still start as PENDING_VERIFICATION until admin approves their KYC
+        // (required before they can list trucks).
+        UserStatus initialStatus = Role.RENTER.equals(role.getName())
+                ? UserStatus.ACTIVE
+                : UserStatus.PENDING_VERIFICATION;
 
         // ── Build and save user ──
         User user = User.builder()
@@ -243,9 +245,9 @@ public class AuthService {
         }
 
         switch (user.getStatus()) {
-            case ACTIVE, PENDING_VERIFICATION -> { /* proceed — PENDING_VERIFICATION users can log in but are
-                                                      restricted by role-specific guards (e.g. booking requires
-                                                      kycVerified=true, trucks require kycVerified=true) */ }
+            case ACTIVE, PENDING_VERIFICATION -> { /* proceed — PENDING_VERIFICATION applies to OWNERs awaiting
+                                                      KYC approval; they can log in but cannot list trucks until
+                                                      kycVerified=true. RENTERs are always ACTIVE from registration. */ }
             case SUSPENDED -> throw new BusinessException("ACCOUNT_SUSPENDED",
                     "Your account has been suspended. Please contact support.");
             case REJECTED -> throw new BusinessException("ACCOUNT_REJECTED",

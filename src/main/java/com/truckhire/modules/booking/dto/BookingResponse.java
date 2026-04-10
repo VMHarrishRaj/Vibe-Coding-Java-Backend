@@ -81,6 +81,29 @@ public class BookingResponse {
         private String fullname;
         private String phone;
         private String email;
+        private String dob;
+        private String address;
+        private String city;
+        private String state;
+        private String country;
+        private String zipcode;
+        private String status;
+        private Boolean kycVerified;
+        private String profileImageUrl;
+        private List<KycDocument> kycDocuments;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class KycDocument {
+        private String id;
+        private String documentType;   // DRIVER_LICENSE | PASSPORT | STATE_ID
+        private String fileUrl;
+        private String status;         // PENDING | VERIFIED | REJECTED
+        private String rejectionReason;
+        private String uploadedAt;
     }
 
     @Data
