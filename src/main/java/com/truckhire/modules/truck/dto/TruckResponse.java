@@ -38,6 +38,7 @@ public class TruckResponse {
 
     // ── Location ──
     private String locationCity;
+    private String locationState;
     private Double latitude;
     private Double longitude;
 

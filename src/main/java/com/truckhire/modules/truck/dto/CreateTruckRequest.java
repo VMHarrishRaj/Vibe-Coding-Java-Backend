@@ -46,6 +46,9 @@ public class CreateTruckRequest {
     @Size(max = 255, message = "Location city must not exceed 255 characters")
     private String locationCity;
 
+    @Size(max = 100, message = "Location state must not exceed 100 characters")
+    private String locationState;
+
     @DecimalMin(value = "-90.0", message = "Latitude must be between -90 and 90")
     @DecimalMax(value = "90.0", message = "Latitude must be between -90 and 90")
     private Double latitude;

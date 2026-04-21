@@ -62,6 +62,9 @@ public class Truck extends BaseAuditEntity {
     @Column(name = "location_city", nullable = false, length = 255)
     private String locationCity;
 
+    @Column(name = "location_state", length = 100)
+    private String locationState;
+
     @Column
     private Double latitude;
 

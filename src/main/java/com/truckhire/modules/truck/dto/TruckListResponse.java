@@ -25,6 +25,7 @@ public class TruckListResponse {
     private BigDecimal pricePerDay;
     private BigDecimal costPerMile;
     private String locationCity;
+    private String locationState;
     private Double latitude;
     private Double longitude;
     private Integer capacityTons;

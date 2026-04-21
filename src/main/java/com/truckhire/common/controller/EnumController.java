@@ -32,6 +32,38 @@ public class EnumController {
         return ApiResponse.success("Payment config retrieved", platformSettingsService.getSettingsResponse());
     }
 
+    @GetMapping("/states")
+    public ApiResponse<List<Map<String, String>>> getUsStates() {
+        List<Map<String, String>> states = List.of(
+            Map.of("code","AL","name","Alabama"), Map.of("code","AK","name","Alaska"),
+            Map.of("code","AZ","name","Arizona"), Map.of("code","AR","name","Arkansas"),
+            Map.of("code","CA","name","California"), Map.of("code","CO","name","Colorado"),
+            Map.of("code","CT","name","Connecticut"), Map.of("code","DE","name","Delaware"),
+            Map.of("code","FL","name","Florida"), Map.of("code","GA","name","Georgia"),
+            Map.of("code","HI","name","Hawaii"), Map.of("code","ID","name","Idaho"),
+            Map.of("code","IL","name","Illinois"), Map.of("code","IN","name","Indiana"),
+            Map.of("code","IA","name","Iowa"), Map.of("code","KS","name","Kansas"),
+            Map.of("code","KY","name","Kentucky"), Map.of("code","LA","name","Louisiana"),
+            Map.of("code","ME","name","Maine"), Map.of("code","MD","name","Maryland"),
+            Map.of("code","MA","name","Massachusetts"), Map.of("code","MI","name","Michigan"),
+            Map.of("code","MN","name","Minnesota"), Map.of("code","MS","name","Mississippi"),
+            Map.of("code","MO","name","Missouri"), Map.of("code","MT","name","Montana"),
+            Map.of("code","NE","name","Nebraska"), Map.of("code","NV","name","Nevada"),
+            Map.of("code","NH","name","New Hampshire"), Map.of("code","NJ","name","New Jersey"),
+            Map.of("code","NM","name","New Mexico"), Map.of("code","NY","name","New York"),
+            Map.of("code","NC","name","North Carolina"), Map.of("code","ND","name","North Dakota"),
+            Map.of("code","OH","name","Ohio"), Map.of("code","OK","name","Oklahoma"),
+            Map.of("code","OR","name","Oregon"), Map.of("code","PA","name","Pennsylvania"),
+            Map.of("code","RI","name","Rhode Island"), Map.of("code","SC","name","South Carolina"),
+            Map.of("code","SD","name","South Dakota"), Map.of("code","TN","name","Tennessee"),
+            Map.of("code","TX","name","Texas"), Map.of("code","UT","name","Utah"),
+            Map.of("code","VT","name","Vermont"), Map.of("code","VA","name","Virginia"),
+            Map.of("code","WA","name","Washington"), Map.of("code","WV","name","West Virginia"),
+            Map.of("code","WI","name","Wisconsin"), Map.of("code","WY","name","Wyoming")
+        );
+        return ApiResponse.success("US states retrieved", states);
+    }
+
     @GetMapping("/enums")
     public ApiResponse<Map<String, List<String>>> getEnums() {
         Map<String, List<String>> enums = Map.of(

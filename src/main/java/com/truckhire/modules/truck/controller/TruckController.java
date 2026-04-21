@@ -236,4 +236,38 @@ public class TruckController {
         TruckAvailabilityResponse response = truckService.checkAvailability(id, startDate, endDate);
         return ResponseEntity.ok(ApiResponse.success("Availability checked", response));
     }
+
+    /**
+     * GET /api/v1/trucks/{id}/calendar?year=2026&month=4
+     * Owner: monthly calendar view showing per-day availability status.
+     * Each day is AVAILABLE (green, interactive), BLOCKED_BY_OWNER (red, interactive),
+     * or BOOKED (red, non-interactive).
+     */
+    @GetMapping("/{id}/calendar")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<ApiResponse<List<CalendarDayResponse>>> getCalendar(
+            @PathVariable UUID id,
+            @RequestParam int year,
+            @RequestParam int month) {
+
+        User owner = SecurityUtils.getCurrentUser();
+        List<CalendarDayResponse> days = truckService.getCalendar(owner.getId(), id, year, month);
+        return ResponseEntity.ok(ApiResponse.success("Calendar retrieved", days));
+    }
+
+    /**
+     * POST /api/v1/trucks/{id}/blocked-dates/toggle
+     * Owner: toggle a single date — blocks it if available, unblocks if already blocked.
+     * Past dates and dates with active bookings are rejected.
+     */
+    @PostMapping("/{id}/blocked-dates/toggle")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<ApiResponse<ToggleBlockedDateResponse>> toggleBlockedDate(
+            @PathVariable UUID id,
+            @Valid @RequestBody ToggleBlockedDateRequest request) {
+
+        User owner = SecurityUtils.getCurrentUser();
+        ToggleBlockedDateResponse response = truckService.toggleBlockedDate(owner.getId(), id, request.getDate());
+        return ResponseEntity.ok(ApiResponse.success("Date availability updated", response));
+    }
 }

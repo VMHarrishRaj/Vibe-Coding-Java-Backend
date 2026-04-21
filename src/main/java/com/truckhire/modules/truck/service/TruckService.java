@@ -67,6 +67,7 @@ public class TruckService {
     private final BookingRepository bookingRepository;
     private final PaymentTransactionRepository transactionRepository;
     private final PickupLocationRepository pickupLocationRepository;
+    private final TruckBlockedDateRepository blockedDateRepository;
 
     // ═══════════════════════════════════════
     // OWNER OPERATIONS
@@ -106,6 +107,7 @@ public class TruckService {
                 .pricePerDay(request.getPricePerDay())
                 .costPerMile(request.getCostPerMile())
                 .locationCity(request.getLocationCity().trim())
+                .locationState(request.getLocationState() != null ? request.getLocationState().trim() : null)
                 .latitude(request.getLatitude())
                 .longitude(request.getLongitude())
                 .capacityTons(request.getCapacityTons())
@@ -185,6 +187,8 @@ public class TruckService {
             truck.setCostPerMile(request.getCostPerMile());
         if (request.getLocationCity() != null)
             truck.setLocationCity(request.getLocationCity().trim());
+        if (request.getLocationState() != null)
+            truck.setLocationState(request.getLocationState().trim());
         if (request.getLatitude() != null)
             truck.setLatitude(request.getLatitude());
         if (request.getLongitude() != null)
@@ -530,10 +534,98 @@ public class TruckService {
                         .build())
                 .toList();
 
+        // Include owner-blocked dates from today forward so renter date picker grays them out
+        List<String> blockedDates = blockedDateRepository
+                .findBlockedDatesBetween(truckId, LocalDate.now(), LocalDate.now().plusYears(1))
+                .stream()
+                .map(LocalDate::toString)
+                .toList();
+
         return BookedDatesResponse.builder()
                 .truckId(truckId.toString())
                 .bookedRanges(ranges)
+                .blockedDates(blockedDates)
                 .build();
+    }
+
+    /**
+     * Owner: get the full calendar view for a truck for a given year+month.
+     * Returns one entry per day in the month with color and type.
+     * - BOOKED = has a booking (non-interactive for owner)
+     * - BLOCKED_BY_OWNER = owner has manually blocked (interactive, owner can unblock)
+     * - AVAILABLE = neither booked nor blocked (interactive, owner can block)
+     */
+    @Transactional(readOnly = true)
+    public List<CalendarDayResponse> getCalendar(UUID ownerId, UUID truckId, int year, int month) {
+        findTruckOwnedBy(truckId, ownerId);
+
+        LocalDate firstDay = LocalDate.of(year, month, 1);
+        LocalDate lastDay = firstDay.withDayOfMonth(firstDay.lengthOfMonth());
+
+        // Fetch booked date ranges for this month
+        List<Booking> bookings = bookingRepository.findUpcomingBookingsByTruckId(truckId);
+        // Build set of all booked dates in the requested month
+        java.util.Set<LocalDate> bookedDates = new java.util.HashSet<>();
+        for (Booking b : bookings) {
+            LocalDate start = b.getStartDate().isBefore(firstDay) ? firstDay : b.getStartDate();
+            LocalDate end = b.getEndDate().isAfter(lastDay) ? lastDay : b.getEndDate();
+            for (LocalDate d = start; !d.isAfter(end); d = d.plusDays(1)) {
+                bookedDates.add(d);
+            }
+        }
+
+        // Fetch owner-blocked dates for this month
+        java.util.Set<LocalDate> ownerBlocked = new java.util.HashSet<>(
+                blockedDateRepository.findBlockedDatesBetween(truckId, firstDay, lastDay));
+
+        List<CalendarDayResponse> result = new java.util.ArrayList<>();
+        for (LocalDate d = firstDay; !d.isAfter(lastDay); d = d.plusDays(1)) {
+            if (bookedDates.contains(d)) {
+                result.add(CalendarDayResponse.builder()
+                        .date(d.toString()).color("red").type("BOOKED").interactive(false).build());
+            } else if (ownerBlocked.contains(d)) {
+                result.add(CalendarDayResponse.builder()
+                        .date(d.toString()).color("red").type("BLOCKED_BY_OWNER").interactive(true).build());
+            } else {
+                result.add(CalendarDayResponse.builder()
+                        .date(d.toString()).color("green").type("AVAILABLE").interactive(true).build());
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Owner: toggle a single date — block it if available, unblock it if owner-blocked.
+     * Guards:
+     * - Past dates are rejected (cannot retroactively change history)
+     * - Dates with an active booking cannot be blocked/unblocked
+     */
+    @Transactional
+    public ToggleBlockedDateResponse toggleBlockedDate(UUID ownerId, UUID truckId, LocalDate date) {
+        Truck truck = findTruckOwnedBy(truckId, ownerId);
+
+        if (date.isBefore(LocalDate.now())) {
+            throw new BusinessException("PAST_DATE", "Cannot modify availability for past dates");
+        }
+
+        boolean hasBooking = bookingRepository.existsConflictingBooking(truckId, date, date);
+        if (hasBooking) {
+            throw new BusinessException("DATE_HAS_BOOKING",
+                    "This date has an active booking and cannot be blocked or unblocked");
+        }
+
+        java.util.Optional<TruckBlockedDate> existing = blockedDateRepository.findByTruckIdAndBlockedDate(truckId, date);
+        if (existing.isPresent()) {
+            blockedDateRepository.delete(existing.get());
+            log.info("Date unblocked: truckId={}, date={}", truckId, date);
+            return ToggleBlockedDateResponse.builder()
+                    .date(date.toString()).action("UNBLOCKED").color("green").build();
+        } else {
+            blockedDateRepository.save(TruckBlockedDate.builder().truck(truck).blockedDate(date).build());
+            log.info("Date blocked: truckId={}, date={}", truckId, date);
+            return ToggleBlockedDateResponse.builder()
+                    .date(date.toString()).action("BLOCKED").color("red").build();
+        }
     }
 
     /**
@@ -553,7 +645,8 @@ public class TruckService {
             throw new BusinessException("INVALID_DATE_RANGE", "startDate cannot be in the past");
         }
 
-        boolean hasConflict = bookingRepository.existsConflictingBooking(truckId, startDate, endDate);
+        boolean hasConflict = bookingRepository.existsConflictingBooking(truckId, startDate, endDate)
+                || blockedDateRepository.existsBlockedDateInRange(truckId, startDate, endDate);
 
         if (!hasConflict) {
             return TruckAvailabilityResponse.builder()
@@ -771,6 +864,7 @@ public class TruckService {
                 .pricePerDay(truck.getPricePerDay())
                 .costPerMile(truck.getCostPerMile())
                 .locationCity(truck.getLocationCity())
+                .locationState(truck.getLocationState())
                 .latitude(truck.getLatitude())
                 .longitude(truck.getLongitude())
                 .capacityTons(truck.getCapacityTons())
@@ -832,6 +926,7 @@ public class TruckService {
                 .pricePerDay(truck.getPricePerDay())
                 .costPerMile(truck.getCostPerMile())
                 .locationCity(truck.getLocationCity())
+                .locationState(truck.getLocationState())
                 .latitude(truck.getLatitude())
                 .longitude(truck.getLongitude())
                 .capacityTons(truck.getCapacityTons())

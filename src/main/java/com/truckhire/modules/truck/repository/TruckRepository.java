@@ -110,6 +110,10 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
                     AND b.startDate <= :availableTo
                     AND b.endDate >= :availableFrom
               )
+              AND t.id NOT IN (
+                  SELECT tbd.truck.id FROM TruckBlockedDate tbd
+                  WHERE tbd.blockedDate BETWEEN :availableFrom AND :availableTo
+              )
             """)
     Page<Truck> searchPublicTrucksWithDates(
             @Param("cityLower") String cityLower,
