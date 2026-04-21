@@ -69,7 +69,7 @@ public class EnumController {
         Map<String, List<String>> enums = Map.of(
                 "vehicleTypes",    List.of("MINI", "STANDARD", "HEAVY"),
                 "truckStatuses",   List.of("Available", "Rented", "Not Available"),
-                "userStatuses",    List.of("ACTIVE", "SUSPENDED", "PENDING_VERIFICATION"),
+                "userStatuses",    List.of("Active", "Inactive", "Waiting for Approval", "Rejected"),
                 "userRoles",       List.of("OWNER", "RENTER"),
                 "bookingStatuses", List.of("ONGOING", "UPCOMING", "COMPLETED", "REJECTED", "CANCELLED"),
                 "kycDocumentTypes",List.of("DRIVER_LICENSE", "PASSPORT", "STATE_ID"),
