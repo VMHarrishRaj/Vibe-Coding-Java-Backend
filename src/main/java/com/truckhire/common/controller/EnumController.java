@@ -68,7 +68,7 @@ public class EnumController {
     public ApiResponse<Map<String, List<String>>> getEnums() {
         Map<String, List<String>> enums = Map.of(
                 "vehicleTypes",    List.of("MINI", "STANDARD", "HEAVY"),
-                "truckStatuses",   List.of("PENDING_APPROVAL", "APPROVED", "REJECTED", "INACTIVE"),
+                "truckStatuses",   List.of("Available", "Rented", "Not Available"),
                 "userStatuses",    List.of("ACTIVE", "SUSPENDED", "PENDING_VERIFICATION"),
                 "userRoles",       List.of("OWNER", "RENTER"),
                 "bookingStatuses", List.of("ONGOING", "UPCOMING", "COMPLETED", "REJECTED", "CANCELLED"),

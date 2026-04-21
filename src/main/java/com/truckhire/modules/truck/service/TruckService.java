@@ -318,7 +318,7 @@ public class TruckService {
     @Transactional(readOnly = true)
     public PagedResponse<TruckListResponse> getMyTrucks(UUID ownerId, Pageable pageable) {
         Page<Truck> page = truckRepository.findByOwnerIdAndDeletedAtIsNull(ownerId, pageable);
-        return buildPagedResponse(page);
+        return buildPagedResponseWithAvailability(page);
     }
 
     /**
@@ -744,7 +744,7 @@ public class TruckService {
             // hasStatus && hasVehicleType && hasKeyword
             page = truckRepository.searchByKeywordAndStatusAndVehicleType(keyword, truckStatus, normalizedVehicleType, pageable);
         }
-        return buildPagedResponse(page);
+        return buildPagedResponseWithAvailability(page);
     }
 
     /**
@@ -754,7 +754,7 @@ public class TruckService {
     public PagedResponse<TruckListResponse> getPendingTrucks(Pageable pageable) {
         Page<Truck> page = truckRepository.findByStatusActiveWithOwner(
                 TruckStatus.PENDING_APPROVAL, pageable);
-        return buildPagedResponse(page);
+        return buildPagedResponseWithAvailability(page);
     }
 
     /**
@@ -1065,22 +1065,26 @@ public class TruckService {
             case APPROVED -> {
                 if (activeBooking == null) {
                     response.setAvailabilityStatus("AVAILABLE");
+                    response.setDisplayStatus("Available");
                 } else {
                     response.setAvailabilityStatus("RENTED");
+                    response.setDisplayStatus("Rented");
                     response.setRentedUntil(activeBooking.getEndDate().toString());
                 }
             }
             case INACTIVE -> {
                 response.setAvailabilityStatus("UNAVAILABLE");
+                response.setDisplayStatus("Not Available");
                 response.setUnavailableReason("Deactivated by owner");
             }
             case PENDING_APPROVAL -> {
                 response.setAvailabilityStatus("UNAVAILABLE");
+                response.setDisplayStatus("Not Available");
                 response.setUnavailableReason("Pending approval");
             }
             default -> {
-                // REJECTED trucks should not reach here (filtered in JPQL)
                 response.setAvailabilityStatus("UNAVAILABLE");
+                response.setDisplayStatus("Not Available");
             }
         }
     }
