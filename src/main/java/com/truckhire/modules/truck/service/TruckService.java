@@ -109,7 +109,9 @@ public class TruckService {
                 .latitude(request.getLatitude())
                 .longitude(request.getLongitude())
                 .capacityTons(request.getCapacityTons())
+                .engine(request.getEngine())
                 .torque(request.getTorque())
+                .towingCapacity(request.getTowingCapacity())
                 .description(request.getDescription())
                 .year(request.getYear())
                 .color(request.getColor())
@@ -189,8 +191,12 @@ public class TruckService {
             truck.setLongitude(request.getLongitude());
         if (request.getCapacityTons() != null)
             truck.setCapacityTons(request.getCapacityTons());
+        if (request.getEngine() != null)
+            truck.setEngine(request.getEngine());
         if (request.getTorque() != null)
             truck.setTorque(request.getTorque());
+        if (request.getTowingCapacity() != null)
+            truck.setTowingCapacity(request.getTowingCapacity());
         if (request.getDescription() != null)
             truck.setDescription(request.getDescription());
         if (request.getYear() != null)
@@ -768,7 +774,9 @@ public class TruckService {
                 .latitude(truck.getLatitude())
                 .longitude(truck.getLongitude())
                 .capacityTons(truck.getCapacityTons())
+                .engine(truck.getEngine())
                 .torque(truck.getTorque())
+                .towingCapacity(truck.getTowingCapacity())
                 .mileageTotal(truck.getMileageTotal())
                 .year(truck.getYear())
                 .vinNumber(truck.getVinNumber())
@@ -792,6 +800,12 @@ public class TruckService {
                 } else {
                     builder.availabilityStatus("RENTED");
                     builder.rentedUntil(activeBooking.getEndDate().toString());
+                    builder.rentalInfo(TruckResponse.RentalInfo.builder()
+                            .renterName(activeBooking.getRenter().getFullname())
+                            .bookingNumber(activeBooking.getBookingNumber())
+                            .startDate(activeBooking.getStartDate().toString())
+                            .endDate(activeBooking.getEndDate().toString())
+                            .build());
                 }
             }
             case INACTIVE -> {
@@ -821,6 +835,9 @@ public class TruckService {
                 .latitude(truck.getLatitude())
                 .longitude(truck.getLongitude())
                 .capacityTons(truck.getCapacityTons())
+                .engine(truck.getEngine())
+                .torque(truck.getTorque())
+                .towingCapacity(truck.getTowingCapacity())
                 .description(truck.getDescription())
                 .year(truck.getYear())
                 .vinNumber(truck.getVinNumber())

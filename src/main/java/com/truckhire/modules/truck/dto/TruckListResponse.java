@@ -32,6 +32,9 @@ public class TruckListResponse {
     private String description;
 
     // Specs
+    private String engine;
+    private String torque;
+    private String towingCapacity;
     private Integer year;
     private String vinNumber;
 

@@ -43,7 +43,9 @@ public class TruckResponse {
 
     // ── Specs ──
     private Integer capacityTons;
+    private String engine;
     private String torque;
+    private String towingCapacity;
     private Integer mileageTotal;
     private Integer year;
     private String vinNumber;
@@ -69,4 +71,18 @@ public class TruckResponse {
     private String unavailableReason;    // only when UNAVAILABLE
     private String coverPhotoUrl;
     private List<String> photoUrls;      // all uploaded photos, cover photo first
+
+    // ── Active rental summary (populated only when availabilityStatus = "RENTED") ──
+    private RentalInfo rentalInfo;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class RentalInfo {
+        private String renterName;
+        private String bookingNumber;
+        private String startDate;   // YYYY-MM-DD
+        private String endDate;     // YYYY-MM-DD
+    }
 }

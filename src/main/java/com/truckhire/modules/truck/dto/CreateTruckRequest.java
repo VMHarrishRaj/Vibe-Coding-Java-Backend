@@ -56,7 +56,9 @@ public class CreateTruckRequest {
 
     @Min(value = 1, message = "Capacity must be at least 1 ton")
     private Integer capacityTons;
+    private String engine;
     private String torque;
+    private String towingCapacity;
     private String description;
 
     // ── Extended fields (optional) ──

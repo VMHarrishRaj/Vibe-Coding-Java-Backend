@@ -44,7 +44,9 @@ public class UpdateTruckRequest {
     private Double latitude;
     private Double longitude;
     private Integer capacityTons;
+    private String engine;
     private String torque;
+    private String towingCapacity;
     private String description;
 
     // ── Extended fields (optional) ──

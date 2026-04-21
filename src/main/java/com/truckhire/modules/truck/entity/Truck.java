@@ -71,8 +71,14 @@ public class Truck extends BaseAuditEntity {
     @Column(name = "capacity_tons")
     private Integer capacityTons;
 
+    @Column(length = 255)
+    private String engine;
+
     @Column(length = 100)
     private String torque;
+
+    @Column(name = "towing_capacity", length = 100)
+    private String towingCapacity;
 
     @Column(name = "mileage_total")
     @Builder.Default
