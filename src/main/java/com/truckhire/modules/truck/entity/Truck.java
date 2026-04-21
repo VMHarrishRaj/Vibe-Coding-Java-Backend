@@ -122,4 +122,13 @@ public class Truck extends BaseAuditEntity {
     @Column(name = "insured", nullable = false)
     @Builder.Default
     private boolean insured = false;
+
+    /**
+     * True when this truck was set INACTIVE because the owner was suspended by admin.
+     * Used to restore the truck to APPROVED when the owner is re-activated.
+     * Never set by owner-initiated deactivation.
+     */
+    @Column(name = "suspended_by_admin", nullable = false)
+    @Builder.Default
+    private boolean suspendedByAdmin = false;
 }

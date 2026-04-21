@@ -354,9 +354,17 @@ public class UserService {
             throw new BusinessException("ALREADY_ACTIVE", "User is already active");
         }
 
+        UserStatus previousStatus = user.getStatus();
         user.setStatus(UserStatus.ACTIVE);
         userRepository.save(user);
-        log.info("User activated: userId={}, previousStatus={}", userId, user.getStatus());
+
+        // If re-activating a suspended OWNER, restore trucks that were auto-deactivated by the suspension
+        if (Role.OWNER.equals(user.getRole().getName()) && previousStatus == UserStatus.SUSPENDED) {
+            int restored = truckRepository.restoreSuspendedTrucksByOwner(userId);
+            log.info("Owner re-activated: {} truck(s) restored to APPROVED", restored);
+        }
+
+        log.info("User activated: userId={}, previousStatus={}", userId, previousStatus);
     }
 
     /**
@@ -393,6 +401,13 @@ public class UserService {
 
         user.setStatus(UserStatus.SUSPENDED);
         userRepository.save(user);
+
+        // If suspending an OWNER, make all their APPROVED trucks unavailable
+        if (Role.OWNER.equals(user.getRole().getName())) {
+            int affected = truckRepository.suspendApprovedTrucksByOwner(userId);
+            log.info("Owner suspended: {} truck(s) set INACTIVE by admin suspension", affected);
+        }
+
         log.info("User suspended: userId={}, by adminId={}", userId, adminId);
     }
 
