@@ -201,6 +201,14 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- ── PDF GENERATION (OpenPDF) ── -->
+        <!-- Free, Apache 2.0 licensed fork of iText. Used for GET /admin/payments/{id}/download -->
+        <dependency>
+            <groupId>com.github.librepdf</groupId>
+            <artifactId>openpdf</artifactId>
+            <version>2.0.3</version>
+        </dependency>
     </dependencies>
 
     <!-- ═══════════════════════════════════════════════

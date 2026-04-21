@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
 
 /**
  * Request DTO for recording an odometer reading.
- * Used by owner at handoff (PUT /bookings/{id}/handoff) and return (PUT /bookings/{id}/return).
+ * Used by renter at pickup (PUT /bookings/{id}/start) and return (PUT /bookings/{id}/return).
  */
 @Data
 @Builder

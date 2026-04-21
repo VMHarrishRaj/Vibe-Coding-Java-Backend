@@ -87,8 +87,9 @@ public class SecurityConfig {
                     // Public file access
                     .requestMatchers("/files/trucks/**").permitAll()
 
-                    // Enum values for frontend dropdowns (public)
+                    // Enum values and reference data for frontend dropdowns (public)
                     .requestMatchers("/config/enums").permitAll()
+                    .requestMatchers("/config/states").permitAll()
 
                     // Payment: webhook receivers (no JWT — gateway calls these)
                     .requestMatchers("/payments/webhook/**").permitAll()

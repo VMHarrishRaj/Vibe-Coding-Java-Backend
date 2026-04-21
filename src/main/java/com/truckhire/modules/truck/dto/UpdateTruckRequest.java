@@ -41,10 +41,15 @@ public class UpdateTruckRequest {
     @Size(max = 255, message = "Location city must not exceed 255 characters")
     private String locationCity;
 
+    @Size(max = 100, message = "Location state must not exceed 100 characters")
+    private String locationState;
+
     private Double latitude;
     private Double longitude;
     private Integer capacityTons;
+    private String engine;
     private String torque;
+    private String towingCapacity;
     private String description;
 
     // ── Extended fields (optional) ──

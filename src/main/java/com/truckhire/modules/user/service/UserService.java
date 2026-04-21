@@ -14,6 +14,7 @@ import com.truckhire.modules.user.entity.UserStatus;
 import com.truckhire.modules.truck.entity.Truck;
 import com.truckhire.modules.truck.repository.TruckRepository;
 import com.truckhire.modules.booking.repository.BookingRepository;
+import com.truckhire.modules.payment.repository.PaymentTransactionRepository;
 import com.truckhire.modules.user.repository.RoleRepository;
 import com.truckhire.modules.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -74,6 +75,7 @@ public class UserService {
     private final FileStorageService fileStorageService;
     private final TruckRepository truckRepository;
     private final BookingRepository bookingRepository;
+    private final PaymentTransactionRepository transactionRepository;
 
     // ═══════════════════════════════════════
     // USER PROFILE OPERATIONS
@@ -108,6 +110,18 @@ public class UserService {
         // ── Apply only non-null fields ──
         if (request.getFullname() != null) {
             user.setFullname(request.getFullname().trim());
+        }
+        if (request.getMiddleName() != null) {
+            user.setMiddleName(request.getMiddleName());
+        }
+        if (request.getAlternatePhone() != null) {
+            user.setAlternatePhone(request.getAlternatePhone());
+        }
+        if (request.getCompanyName() != null) {
+            user.setCompanyName(request.getCompanyName());
+        }
+        if (request.getTaxId() != null) {
+            user.setTaxId(request.getTaxId());
         }
         if (request.getDob() != null) {
             user.setDob(LocalDate.parse(request.getDob()));
@@ -313,6 +327,15 @@ public class UserService {
                 .toList();
 
         response.setVehiclesOwned(vehiclesOwned);
+
+        // Aggregated payment stats for this owner
+        response.setLifetimeEarnings(transactionRepository.sumOwnerEarnings(userId));
+        response.setPendingPayouts(transactionRepository.sumOwnerPendingPayouts(userId));
+        response.setLastPaymentDate(
+                transactionRepository.findLastPayoutDateForOwner(userId)
+                        .map(java.time.Instant::toString)
+                        .orElse(null));
+
         return response;
     }
 
@@ -331,9 +354,17 @@ public class UserService {
             throw new BusinessException("ALREADY_ACTIVE", "User is already active");
         }
 
+        UserStatus previousStatus = user.getStatus();
         user.setStatus(UserStatus.ACTIVE);
         userRepository.save(user);
-        log.info("User activated: userId={}, previousStatus={}", userId, user.getStatus());
+
+        // If re-activating a suspended OWNER, restore trucks that were auto-deactivated by the suspension
+        if (Role.OWNER.equals(user.getRole().getName()) && previousStatus == UserStatus.SUSPENDED) {
+            int restored = truckRepository.restoreSuspendedTrucksByOwner(userId);
+            log.info("Owner re-activated: {} truck(s) restored to APPROVED", restored);
+        }
+
+        log.info("User activated: userId={}, previousStatus={}", userId, previousStatus);
     }
 
     /**
@@ -370,6 +401,13 @@ public class UserService {
 
         user.setStatus(UserStatus.SUSPENDED);
         userRepository.save(user);
+
+        // If suspending an OWNER, make all their APPROVED trucks unavailable
+        if (Role.OWNER.equals(user.getRole().getName())) {
+            int affected = truckRepository.suspendApprovedTrucksByOwner(userId);
+            log.info("Owner suspended: {} truck(s) set INACTIVE by admin suspension", affected);
+        }
+
         log.info("User suspended: userId={}, by adminId={}", userId, adminId);
     }
 
@@ -590,10 +628,15 @@ public class UserService {
         return UserProfileResponse.builder()
                 .id(user.getId().toString())
                 .fullname(user.getFullname())
+                .middleName(user.getMiddleName())
                 .email(user.getEmail())
                 .phone(user.getPhone())
+                .alternatePhone(user.getAlternatePhone())
+                .companyName(user.getCompanyName())
+                .taxId(user.getTaxId())
                 .role(user.getRole().getName())
                 .status(user.getStatus().name())
+                .displayStatus(toDisplayUserStatus(user.getStatus()))
                 .dob(user.getDob() != null ? user.getDob().toString() : null)
                 .address(user.getAddress())
                 .city(user.getCity())
@@ -625,9 +668,19 @@ public class UserService {
                 .phone(user.getPhone())
                 .role(user.getRole().getName())
                 .status(user.getStatus().name())
+                .displayStatus(toDisplayUserStatus(user.getStatus()))
                 .kycVerified(user.isKycVerified())
                 .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null)
                 .vehicleCount(vehicleCount)
                 .build();
+    }
+
+    private String toDisplayUserStatus(UserStatus status) {
+        return switch (status) {
+            case ACTIVE               -> "Active";
+            case PENDING_VERIFICATION, PENDING -> "Waiting for Approval";
+            case SUSPENDED            -> "Inactive";
+            case REJECTED             -> "Rejected";
+        };
     }
 }

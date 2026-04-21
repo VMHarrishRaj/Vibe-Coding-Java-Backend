@@ -48,9 +48,11 @@ public class AdminBookingInvoiceResponse {
     // PARTIALLY_PAID — CHARGE succeeded AND mileage exists AND mileage not succeeded
     // PENDING      — CHARGE not succeeded
     private String paymentStatus;
+    private String displayPaymentStatus;    // UI label: "Received" / "Failed" / "Refunded" / "Pending"
 
     // SETTLED | PAYOUT_PENDING | PENDING
     private String settlementStatus;
+    private String displaySettlementStatus; // UI label: "Settled" / "Settlement Pending" / "Pending"
 
     private boolean hasMileage;
 }

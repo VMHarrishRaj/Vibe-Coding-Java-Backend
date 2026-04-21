@@ -70,6 +70,32 @@ public class BookingController {
         return ResponseEntity.ok(ApiResponse.success("Booking cancelled", response));
     }
 
+    /**
+     * PUT /bookings/{id}/start — Renter records odometer start when picking up the truck → ACTIVE.
+     */
+    @PutMapping("/{id}/start")
+    @PreAuthorize("hasRole('RENTER')")
+    public ResponseEntity<ApiResponse<BookingResponse>> startRental(
+            @PathVariable("id") java.util.UUID bookingId,
+            @Valid @RequestBody OdometerUpdateRequest request) {
+        User currentUser = SecurityUtils.getCurrentUser();
+        BookingResponse response = bookingService.recordOdometerStart(currentUser.getId(), bookingId, request);
+        return ResponseEntity.ok(ApiResponse.success("Rental started. Booking is now ACTIVE.", response));
+    }
+
+    /**
+     * PUT /bookings/{id}/return — Renter records odometer end when returning the truck → COMPLETED.
+     */
+    @PutMapping("/{id}/return")
+    @PreAuthorize("hasRole('RENTER')")
+    public ResponseEntity<ApiResponse<BookingResponse>> recordReturn(
+            @PathVariable("id") java.util.UUID bookingId,
+            @Valid @RequestBody OdometerUpdateRequest request) {
+        User currentUser = SecurityUtils.getCurrentUser();
+        BookingResponse response = bookingService.recordOdometerEnd(currentUser.getId(), bookingId, request);
+        return ResponseEntity.ok(ApiResponse.success("Return recorded. Booking is now COMPLETED.", response));
+    }
+
     // ── OWNER endpoints ──
 
     /**
@@ -124,32 +150,6 @@ public class BookingController {
         String reason = request != null ? request.getReason() : null;
         BookingResponse response = bookingService.ownerCancelBooking(currentUser.getId(), bookingId, reason);
         return ResponseEntity.ok(ApiResponse.success("Booking cancelled", response));
-    }
-
-    /**
-     * PUT /bookings/{id}/handoff — Owner records odometer start → ACTIVE.
-     */
-    @PutMapping("/{id}/handoff")
-    @PreAuthorize("hasRole('OWNER')")
-    public ResponseEntity<ApiResponse<BookingResponse>> recordHandoff(
-            @PathVariable("id") java.util.UUID bookingId,
-            @Valid @RequestBody OdometerUpdateRequest request) {
-        User currentUser = SecurityUtils.getCurrentUser();
-        BookingResponse response = bookingService.recordOdometerStart(currentUser.getId(), bookingId, request);
-        return ResponseEntity.ok(ApiResponse.success("Handoff recorded. Booking is now ACTIVE.", response));
-    }
-
-    /**
-     * PUT /bookings/{id}/return — Owner records odometer end → COMPLETED.
-     */
-    @PutMapping("/{id}/return")
-    @PreAuthorize("hasRole('OWNER')")
-    public ResponseEntity<ApiResponse<BookingResponse>> recordReturn(
-            @PathVariable("id") java.util.UUID bookingId,
-            @Valid @RequestBody OdometerUpdateRequest request) {
-        User currentUser = SecurityUtils.getCurrentUser();
-        BookingResponse response = bookingService.recordOdometerEnd(currentUser.getId(), bookingId, request);
-        return ResponseEntity.ok(ApiResponse.success("Return recorded. Booking is now COMPLETED.", response));
     }
 
     /**

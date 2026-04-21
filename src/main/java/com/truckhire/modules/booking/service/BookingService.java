@@ -14,10 +14,14 @@ import com.truckhire.modules.addon.service.AddonService;
 import com.truckhire.modules.payment.service.PaymentService;
 import com.truckhire.modules.truck.entity.Truck;
 import com.truckhire.modules.truck.entity.TruckStatus;
+import com.truckhire.modules.truck.entity.TruckBlockedDate;
+import com.truckhire.modules.truck.repository.TruckBlockedDateRepository;
 import com.truckhire.modules.truck.repository.TruckDocumentRepository;
 import com.truckhire.modules.truck.repository.TruckRepository;
 import com.truckhire.modules.user.entity.User;
+import com.truckhire.modules.user.entity.UserDocument;
 import com.truckhire.modules.user.entity.UserStatus;
+import com.truckhire.modules.user.repository.UserDocumentRepository;
 import com.truckhire.modules.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,9 +50,9 @@ import java.util.stream.Collectors;
  * total_cost = (total_days × price_per_day) + (miles_driven × cost_per_mile)
  *
  * STATUS TRANSITIONS:
- * PENDING → CONFIRMED (owner accepts) | REJECTED (owner declines) | CANCELLED
- * CONFIRMED → ACTIVE (owner handoff) | CANCELLED
- * ACTIVE → COMPLETED (owner return)
+ * PENDING → AWAITING_APPROVAL (renter pays) → CONFIRMED (owner approves) | REJECTED (owner declines)
+ * CONFIRMED → ACTIVE (renter records odometer at pickup)
+ * ACTIVE → COMPLETED (renter records odometer at return)
  */
 @Slf4j
 @Service
@@ -62,8 +66,10 @@ public class BookingService {
     private final TruckRepository truckRepository;
     private final TruckDocumentRepository truckDocumentRepository;
     private final UserRepository userRepository;
+    private final UserDocumentRepository userDocumentRepository;
     private final PaymentService paymentService;
     private final AddonService addonService;
+    private final TruckBlockedDateRepository blockedDateRepository;
 
     public BookingService(
             BookingRepository bookingRepository,
@@ -71,15 +77,19 @@ public class BookingService {
             TruckRepository truckRepository,
             TruckDocumentRepository truckDocumentRepository,
             UserRepository userRepository,
+            UserDocumentRepository userDocumentRepository,
             @Lazy PaymentService paymentService,
-            AddonService addonService) {
+            AddonService addonService,
+            TruckBlockedDateRepository blockedDateRepository) {
         this.bookingRepository = bookingRepository;
         this.historyRepository = historyRepository;
         this.truckRepository = truckRepository;
         this.truckDocumentRepository = truckDocumentRepository;
         this.userRepository = userRepository;
+        this.userDocumentRepository = userDocumentRepository;
         this.paymentService = paymentService;
         this.addonService = addonService;
+        this.blockedDateRepository = blockedDateRepository;
     }
 
     // ═══════════════════════════════════════
@@ -91,21 +101,17 @@ public class BookingService {
      *
      * Guards:
      * 1. Renter must be ACTIVE
-     * 2. Renter must have KYC verified
-     * 3. Truck must be APPROVED
-     * 4. Renter cannot book their own truck
-     * 5. Dates must be valid (start >= tomorrow, end > start)
-     * 6. No conflicting booking on that truck for those dates
+     * 2. Truck must be APPROVED
+     * 3. Renter cannot book their own truck
+     * 4. Dates must be valid (start >= tomorrow, end > start)
+     * 5. No conflicting booking on that truck for those dates
+     *
+     * KYC is not required to book — the owner reviews the renter's uploaded
+     * documents via the booking detail and decides to approve or reject.
      */
     @Transactional
     public BookingResponse createBooking(UUID renterId, CreateBookingRequest request) {
         User renter = loadActiveUser(renterId);
-
-        if (!renter.isKycVerified()) {
-            throw new BusinessException("KYC_NOT_VERIFIED",
-                    "Your KYC must be verified before you can make a booking. " +
-                            "Please upload your KYC documents and wait for admin verification.");
-        }
 
         Truck truck = truckRepository.findByIdAndDeletedAtIsNull(request.getTruckId())
                 .orElseThrow(() -> new ResourceNotFoundException("Truck", "id", request.getTruckId()));
@@ -138,6 +144,10 @@ public class BookingService {
         if (bookingRepository.existsConflictingBooking(truck.getId(), startDate, endDate)) {
             throw new BusinessException("TRUCK_NOT_AVAILABLE",
                     "This truck is already booked for the selected dates");
+        }
+        if (blockedDateRepository.existsBlockedDateInRange(truck.getId(), startDate, endDate)) {
+            throw new BusinessException("TRUCK_NOT_AVAILABLE",
+                    "The owner has blocked one or more dates in the selected range");
         }
 
         // Snapshot prices at booking time — never changes after this
@@ -318,19 +328,19 @@ public class BookingService {
     }
 
     /**
-     * Owner records odometer at truck handoff — transitions booking CONFIRMED → ACTIVE.
+     * Renter records odometer at truck pickup — transitions booking CONFIRMED → ACTIVE.
      *
      * The odometer reading must be >= the truck's current mileage to catch
      * obviously wrong values. It cannot be less than what the truck shows.
      */
     @Transactional
-    public BookingResponse recordOdometerStart(UUID ownerId, UUID bookingId, OdometerUpdateRequest request) {
+    public BookingResponse recordOdometerStart(UUID renterId, UUID bookingId, OdometerUpdateRequest request) {
         Booking booking = loadBookingWithDetails(bookingId);
-        verifyOwner(booking, ownerId);
+        verifyRenter(booking, renterId);
 
         if (booking.getStatus() != BookingStatus.CONFIRMED) {
             throw new BusinessException("INVALID_STATUS_TRANSITION",
-                    "Can only record handoff for CONFIRMED bookings. Current status: " + booking.getStatus());
+                    "Can only start a CONFIRMED booking. Current status: " + booking.getStatus());
         }
 
         Truck truck = booking.getTruck();
@@ -344,22 +354,22 @@ public class BookingService {
         booking.setHandedOffAt(Instant.now());
         booking.setStatus(BookingStatus.ACTIVE);
         Booking saved = bookingRepository.save(booking);
-        recordHistory(saved, BookingStatus.ACTIVE, booking.getOwner(), request.getNotes());
+        recordHistory(saved, BookingStatus.ACTIVE, booking.getRenter(), request.getNotes());
 
-        log.info("Booking handoff recorded: id={}, odometerStart={}", bookingId, request.getOdometerReading());
+        log.info("Booking started by renter: id={}, odometerStart={}", bookingId, request.getOdometerReading());
         return mapToFullResponse(saved);
     }
 
     /**
-     * Owner records odometer at truck return — transitions booking ACTIVE → COMPLETED.
+     * Renter records odometer at truck return — transitions booking ACTIVE → COMPLETED.
      *
      * Calculates: milesDriven, mileageAmount, totalAmount.
      * Updates truck.mileageTotal with the miles driven on this rental.
      */
     @Transactional
-    public BookingResponse recordOdometerEnd(UUID ownerId, UUID bookingId, OdometerUpdateRequest request) {
+    public BookingResponse recordOdometerEnd(UUID renterId, UUID bookingId, OdometerUpdateRequest request) {
         Booking booking = loadBookingWithDetails(bookingId);
-        verifyOwner(booking, ownerId);
+        verifyRenter(booking, renterId);
 
         if (booking.getStatus() != BookingStatus.ACTIVE) {
             throw new BusinessException("INVALID_STATUS_TRANSITION",
@@ -392,7 +402,7 @@ public class BookingService {
         truckRepository.save(truck);
 
         Booking saved = bookingRepository.save(booking);
-        recordHistory(saved, BookingStatus.COMPLETED, booking.getOwner(), request.getNotes());
+        recordHistory(saved, BookingStatus.COMPLETED, booking.getRenter(), request.getNotes());
 
         // If there are mileage charges, create a top-up order for the renter to pay.
         // Payout is admin-initiated via POST /admin/bookings/{id}/payout — not automatic.
@@ -503,13 +513,18 @@ public class BookingService {
 
     /**
      * Owner's bookings (paginated, newest first).
+     *
+     * PENDING bookings (renter created but not yet paid) are excluded — the owner
+     * should only see bookings once the renter has committed payment and the booking
+     * reaches AWAITING_APPROVAL. Date-conflict blocking is unaffected because
+     * existsConflictingBooking still includes PENDING.
      */
     @Transactional(readOnly = true)
     public PagedResponse<BookingListResponse> getMyBookingsAsOwner(UUID ownerId, String statusFilter, Pageable pageable) {
         BookingStatus status = parseStatusFilter(statusFilter);
         Page<Booking> page;
         if (status == null) {
-            page = bookingRepository.findByOwnerIdOrderByCreatedAtDesc(ownerId, pageable);
+            page = bookingRepository.findByOwnerIdExcludingPendingOrderByCreatedAtDesc(ownerId, pageable);
         } else {
             page = bookingRepository.findByOwnerIdAndStatusOrderByCreatedAtDesc(ownerId, status, pageable);
         }
@@ -557,6 +572,13 @@ public class BookingService {
         if (!booking.getOwner().getId().equals(ownerId)) {
             throw new BusinessException("NOT_BOOKING_OWNER",
                     "You are not the owner for this booking");
+        }
+    }
+
+    private void verifyRenter(Booking booking, UUID renterId) {
+        if (!booking.getRenter().getId().equals(renterId)) {
+            throw new BusinessException("NOT_BOOKING_RENTER",
+                    "You are not the renter for this booking");
         }
     }
 
@@ -621,18 +643,44 @@ public class BookingService {
             coverPhotoUrl = baseUrl + "/api/v1/files/" + photos.get(0)[1];
         }
 
+        // Load renter's KYC documents
+        User renter = booking.getRenter();
+        List<BookingResponse.KycDocument> kycDocs = userDocumentRepository
+                .findByUserId(renter.getId())
+                .stream()
+                .map(doc -> BookingResponse.KycDocument.builder()
+                        .id(doc.getId().toString())
+                        .documentType(doc.getDocumentType().getName())
+                        .fileUrl(baseUrl + "/api/v1/files/" + doc.getFilePath())
+                        .status(doc.getVerificationStatus().name())
+                        .rejectionReason(doc.getRejectionReason())
+                        .uploadedAt(doc.getUploadedAt() != null ? doc.getUploadedAt().toString() : null)
+                        .build())
+                .collect(Collectors.toList());
+
         Truck truck = booking.getTruck();
 
         return BookingResponse.builder()
                 .id(booking.getId().toString())
                 .bookingNumber(booking.getBookingNumber())
                 .status(booking.getStatus().name())
+                .displayStatus(toDisplayStatus(booking.getStatus(), booking.getEndDate()))
                 .createdAt(booking.getCreatedAt() != null ? booking.getCreatedAt().toString() : null)
                 .renter(BookingResponse.RenterInfo.builder()
-                        .id(booking.getRenter().getId().toString())
-                        .fullname(booking.getRenter().getFullname())
-                        .phone(booking.getRenter().getPhone())
-                        .email(booking.getRenter().getEmail())
+                        .id(renter.getId().toString())
+                        .fullname(renter.getFullname())
+                        .phone(renter.getPhone())
+                        .email(renter.getEmail())
+                        .dob(renter.getDob() != null ? renter.getDob().toString() : null)
+                        .address(renter.getAddress())
+                        .city(renter.getCity())
+                        .state(renter.getState())
+                        .country(renter.getCountry())
+                        .zipcode(renter.getZipcode())
+                        .status(renter.getStatus().name())
+                        .kycVerified(renter.isKycVerified())
+                        .profileImageUrl(renter.getProfileImageUrl())
+                        .kycDocuments(kycDocs.isEmpty() ? null : kycDocs)
                         .build())
                 .truck(BookingResponse.TruckInfo.builder()
                         .id(truck.getId().toString())
@@ -699,7 +747,7 @@ public class BookingService {
                 .dayAmount(booking.getDayAmount())
                 .totalAmount(booking.getTotalAmount())
                 .status(booking.getStatus().name())
-                .displayStatus(toDisplayStatus(booking.getStatus()))
+                .displayStatus(toDisplayStatus(booking.getStatus(), booking.getEndDate()))
                 .createdAt(booking.getCreatedAt() != null ? booking.getCreatedAt().toString() : null)
                 .isOverdue(booking.getStatus() == BookingStatus.ACTIVE
                         && booking.getEndDate().isBefore(java.time.LocalDate.now()))
@@ -708,16 +756,17 @@ public class BookingService {
 
     /**
      * Maps raw BookingStatus to the grouped display label used in the UI.
-     * ONGOING  = actively rented out (ACTIVE)
-     * UPCOMING = payment captured or confirmed, not yet started (PENDING, AWAITING_APPROVAL, CONFIRMED)
+     * Ongoing  = actively rented, end date not yet passed
+     * Overdue  = actively rented but end date has passed (still ACTIVE in DB)
+     * Upcoming = payment captured or confirmed, not yet started
      */
-    private String toDisplayStatus(BookingStatus status) {
+    private String toDisplayStatus(BookingStatus status, LocalDate endDate) {
         return switch (status) {
-            case ACTIVE -> "ONGOING";
-            case PENDING, AWAITING_APPROVAL, CONFIRMED -> "UPCOMING";
-            case COMPLETED -> "COMPLETED";
-            case REJECTED -> "REJECTED";
-            case CANCELLED -> "CANCELLED";
+            case ACTIVE -> endDate != null && endDate.isBefore(LocalDate.now()) ? "Overdue" : "Ongoing";
+            case PENDING, AWAITING_APPROVAL, CONFIRMED -> "Upcoming";
+            case COMPLETED -> "Completed";
+            case REJECTED -> "Rejected";
+            case CANCELLED -> "Cancelled";
         };
     }
 

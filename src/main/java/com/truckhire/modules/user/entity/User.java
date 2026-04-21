@@ -59,6 +59,18 @@ public class User extends BaseAuditEntity {
     @Column(nullable = false, length = 255)
     private String fullname;
 
+    @Column(name = "middle_name", length = 100)
+    private String middleName;
+
+    @Column(name = "alternate_phone", length = 20)
+    private String alternatePhone;
+
+    @Column(name = "company_name", length = 255)
+    private String companyName;
+
+    @Column(name = "tax_id", length = 50)
+    private String taxId;
+
     @Column
     private LocalDate dob;
 

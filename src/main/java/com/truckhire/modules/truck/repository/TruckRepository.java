@@ -5,6 +5,7 @@ import com.truckhire.modules.truck.entity.TruckStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -109,6 +110,10 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
                   WHERE b.status IN ('PENDING', 'AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE')
                     AND b.startDate <= :availableTo
                     AND b.endDate >= :availableFrom
+              )
+              AND t.id NOT IN (
+                  SELECT tbd.truck.id FROM TruckBlockedDate tbd
+                  WHERE tbd.blockedDate BETWEEN :availableFrom AND :availableTo
               )
             """)
     Page<Truck> searchPublicTrucksWithDates(
@@ -298,4 +303,18 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
               )
             """)
     long countRentedTrucks();
+
+    // ── Owner suspension / re-activation bulk updates ──
+
+    // Suspend: flip all APPROVED trucks of an owner to INACTIVE and mark suspendedByAdmin.
+    // PENDING_APPROVAL and REJECTED trucks are left untouched — not yet live.
+    @Modifying
+    @Query("UPDATE Truck t SET t.status = com.truckhire.modules.truck.entity.TruckStatus.INACTIVE, t.suspendedByAdmin = true WHERE t.owner.id = :ownerId AND t.status = com.truckhire.modules.truck.entity.TruckStatus.APPROVED AND t.deletedAt IS NULL")
+    int suspendApprovedTrucksByOwner(@Param("ownerId") UUID ownerId);
+
+    // Re-activate: restore only trucks that were deactivated by the suspension.
+    // Owner-manually-deactivated trucks (suspendedByAdmin = false) are left alone.
+    @Modifying
+    @Query("UPDATE Truck t SET t.status = com.truckhire.modules.truck.entity.TruckStatus.APPROVED, t.suspendedByAdmin = false WHERE t.owner.id = :ownerId AND t.status = com.truckhire.modules.truck.entity.TruckStatus.INACTIVE AND t.suspendedByAdmin = true AND t.deletedAt IS NULL")
+    int restoreSuspendedTrucksByOwner(@Param("ownerId") UUID ownerId);
 }

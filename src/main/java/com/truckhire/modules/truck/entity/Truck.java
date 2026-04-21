@@ -62,6 +62,9 @@ public class Truck extends BaseAuditEntity {
     @Column(name = "location_city", nullable = false, length = 255)
     private String locationCity;
 
+    @Column(name = "location_state", length = 100)
+    private String locationState;
+
     @Column
     private Double latitude;
 
@@ -71,8 +74,14 @@ public class Truck extends BaseAuditEntity {
     @Column(name = "capacity_tons")
     private Integer capacityTons;
 
+    @Column(length = 255)
+    private String engine;
+
     @Column(length = 100)
     private String torque;
+
+    @Column(name = "towing_capacity", length = 100)
+    private String towingCapacity;
 
     @Column(name = "mileage_total")
     @Builder.Default
@@ -113,4 +122,13 @@ public class Truck extends BaseAuditEntity {
     @Column(name = "insured", nullable = false)
     @Builder.Default
     private boolean insured = false;
+
+    /**
+     * True when this truck was set INACTIVE because the owner was suspended by admin.
+     * Used to restore the truck to APPROVED when the owner is re-activated.
+     * Never set by owner-initiated deactivation.
+     */
+    @Column(name = "suspended_by_admin", nullable = false)
+    @Builder.Default
+    private boolean suspendedByAdmin = false;
 }

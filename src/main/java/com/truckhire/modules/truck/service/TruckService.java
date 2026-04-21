@@ -67,6 +67,7 @@ public class TruckService {
     private final BookingRepository bookingRepository;
     private final PaymentTransactionRepository transactionRepository;
     private final PickupLocationRepository pickupLocationRepository;
+    private final TruckBlockedDateRepository blockedDateRepository;
 
     // ═══════════════════════════════════════
     // OWNER OPERATIONS
@@ -106,10 +107,13 @@ public class TruckService {
                 .pricePerDay(request.getPricePerDay())
                 .costPerMile(request.getCostPerMile())
                 .locationCity(request.getLocationCity().trim())
+                .locationState(request.getLocationState() != null ? request.getLocationState().trim() : null)
                 .latitude(request.getLatitude())
                 .longitude(request.getLongitude())
                 .capacityTons(request.getCapacityTons())
+                .engine(request.getEngine())
                 .torque(request.getTorque())
+                .towingCapacity(request.getTowingCapacity())
                 .description(request.getDescription())
                 .year(request.getYear())
                 .color(request.getColor())
@@ -183,14 +187,20 @@ public class TruckService {
             truck.setCostPerMile(request.getCostPerMile());
         if (request.getLocationCity() != null)
             truck.setLocationCity(request.getLocationCity().trim());
+        if (request.getLocationState() != null)
+            truck.setLocationState(request.getLocationState().trim());
         if (request.getLatitude() != null)
             truck.setLatitude(request.getLatitude());
         if (request.getLongitude() != null)
             truck.setLongitude(request.getLongitude());
         if (request.getCapacityTons() != null)
             truck.setCapacityTons(request.getCapacityTons());
+        if (request.getEngine() != null)
+            truck.setEngine(request.getEngine());
         if (request.getTorque() != null)
             truck.setTorque(request.getTorque());
+        if (request.getTowingCapacity() != null)
+            truck.setTowingCapacity(request.getTowingCapacity());
         if (request.getDescription() != null)
             truck.setDescription(request.getDescription());
         if (request.getYear() != null)
@@ -308,43 +318,100 @@ public class TruckService {
     @Transactional(readOnly = true)
     public PagedResponse<TruckListResponse> getMyTrucks(UUID ownerId, Pageable pageable) {
         Page<Truck> page = truckRepository.findByOwnerIdAndDeletedAtIsNull(ownerId, pageable);
-        return buildPagedResponse(page);
+        return buildPagedResponseWithAvailability(page);
     }
 
     /**
      * Get owner dashboard summary.
      *
-     * Counts trucks per status in one GROUP BY query, then maps results
-     * into the dashboard DTO. Booking and earnings fields are stubbed at 0
-     * until Phase 5/6 are implemented.
+     * Returns:
+     * - Owner profile (name, email, phone, profileImageUrl, stripeConnected)
+     * - Truck counts per status
+     * - Booking counts per stage (AWAITING_APPROVAL, CONFIRMED, ACTIVE, COMPLETED) + total
+     * - Earnings: total lifetime earnings and pending payout amount
+     * - Monthly revenue for the last 12 months (YYYY-MM → ownerAmount sum)
+     *   Months with no activity are omitted — frontend fills gaps as "No data available"
      */
     @Transactional(readOnly = true)
     public OwnerDashboardResponse getDashboard(UUID ownerId) {
-        List<Object[]> rows = truckRepository.countTrucksByStatusForOwner(ownerId);
+        // ── Owner profile ──
+        User owner = userRepository.findById(ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", ownerId));
 
+        // ── Truck counts ──
+        List<Object[]> truckRows = truckRepository.countTrucksByStatusForOwner(ownerId);
         long approved = 0, pending = 0, rejected = 0, inactive = 0;
-        for (Object[] row : rows) {
+        for (Object[] row : truckRows) {
             TruckStatus status = (TruckStatus) row[0];
             long count = (long) row[1];
             switch (status) {
-                case APPROVED        -> approved = count;
+                case APPROVED         -> approved = count;
                 case PENDING_APPROVAL -> pending = count;
-                case REJECTED        -> rejected = count;
-                case INACTIVE        -> inactive = count;
+                case REJECTED         -> rejected = count;
+                case INACTIVE         -> inactive = count;
             }
         }
 
-        long pendingBookings = bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.PENDING);
+        // ── Booking counts per stage (one batch query) ──
+        List<BookingStatus> trackedStatuses = List.of(
+                BookingStatus.AWAITING_APPROVAL,
+                BookingStatus.CONFIRMED,
+                BookingStatus.ACTIVE,
+                BookingStatus.COMPLETED
+        );
+        List<Object[]> bookingRows = bookingRepository.countByOwnerIdAndStatuses(ownerId, trackedStatuses);
+        long awaitingApproval = 0, confirmed = 0, active = 0, completed = 0;
+        for (Object[] row : bookingRows) {
+            BookingStatus status = (BookingStatus) row[0];
+            long count = (long) row[1];
+            switch (status) {
+                case AWAITING_APPROVAL -> awaitingApproval = count;
+                case CONFIRMED         -> confirmed = count;
+                case ACTIVE            -> active = count;
+                case COMPLETED         -> completed = count;
+                default -> { /* ignored */ }
+            }
+        }
+        long totalBookings = awaitingApproval + confirmed + active + completed;
+
+        // ── Earnings ──
         BigDecimal totalEarnings = transactionRepository.sumOwnerEarnings(ownerId);
+        BigDecimal pendingPayoutAmount = transactionRepository.sumOwnerPendingPayouts(ownerId);
+
+        // ── Monthly revenue — last 12 months ──
+        List<Object[]> revenueRows = transactionRepository.sumOwnerRevenueGroupedByMonth(ownerId);
+        List<OwnerDashboardResponse.MonthlyRevenue> monthlyRevenue = revenueRows.stream()
+                .map(row -> OwnerDashboardResponse.MonthlyRevenue.builder()
+                        .month((String) row[0])
+                        .revenue(new BigDecimal(row[1].toString()))
+                        .build())
+                .collect(Collectors.toList());
 
         return OwnerDashboardResponse.builder()
+                // profile
+                .ownerId(owner.getId().toString())
+                .fullname(owner.getFullname())
+                .email(owner.getEmail())
+                .phone(owner.getPhone())
+                .profileImageUrl(owner.getProfileImageUrl())
+                .stripeConnected(owner.getStripeAccountId() != null && !owner.getStripeAccountId().isBlank())
+                // trucks
                 .totalTrucks(approved + pending + rejected + inactive)
                 .approvedTrucks(approved)
                 .pendingTrucks(pending)
                 .rejectedTrucks(rejected)
                 .inactiveTrucks(inactive)
-                .pendingBookings(pendingBookings)
+                // bookings
+                .awaitingApprovalBookings(awaitingApproval)
+                .confirmedBookings(confirmed)
+                .activeBookings(active)
+                .completedBookings(completed)
+                .totalBookings(totalBookings)
+                // earnings
                 .totalEarnings(totalEarnings)
+                .pendingPayoutAmount(pendingPayoutAmount)
+                // monthly revenue
+                .monthlyRevenue(monthlyRevenue)
                 .build();
     }
 
@@ -467,10 +534,98 @@ public class TruckService {
                         .build())
                 .toList();
 
+        // Include owner-blocked dates from today forward so renter date picker grays them out
+        List<String> blockedDates = blockedDateRepository
+                .findBlockedDatesBetween(truckId, LocalDate.now(), LocalDate.now().plusYears(1))
+                .stream()
+                .map(LocalDate::toString)
+                .toList();
+
         return BookedDatesResponse.builder()
                 .truckId(truckId.toString())
                 .bookedRanges(ranges)
+                .blockedDates(blockedDates)
                 .build();
+    }
+
+    /**
+     * Owner: get the full calendar view for a truck for a given year+month.
+     * Returns one entry per day in the month with color and type.
+     * - BOOKED = has a booking (non-interactive for owner)
+     * - BLOCKED_BY_OWNER = owner has manually blocked (interactive, owner can unblock)
+     * - AVAILABLE = neither booked nor blocked (interactive, owner can block)
+     */
+    @Transactional(readOnly = true)
+    public List<CalendarDayResponse> getCalendar(UUID ownerId, UUID truckId, int year, int month) {
+        findTruckOwnedBy(truckId, ownerId);
+
+        LocalDate firstDay = LocalDate.of(year, month, 1);
+        LocalDate lastDay = firstDay.withDayOfMonth(firstDay.lengthOfMonth());
+
+        // Fetch booked date ranges for this month
+        List<Booking> bookings = bookingRepository.findUpcomingBookingsByTruckId(truckId);
+        // Build set of all booked dates in the requested month
+        java.util.Set<LocalDate> bookedDates = new java.util.HashSet<>();
+        for (Booking b : bookings) {
+            LocalDate start = b.getStartDate().isBefore(firstDay) ? firstDay : b.getStartDate();
+            LocalDate end = b.getEndDate().isAfter(lastDay) ? lastDay : b.getEndDate();
+            for (LocalDate d = start; !d.isAfter(end); d = d.plusDays(1)) {
+                bookedDates.add(d);
+            }
+        }
+
+        // Fetch owner-blocked dates for this month
+        java.util.Set<LocalDate> ownerBlocked = new java.util.HashSet<>(
+                blockedDateRepository.findBlockedDatesBetween(truckId, firstDay, lastDay));
+
+        List<CalendarDayResponse> result = new java.util.ArrayList<>();
+        for (LocalDate d = firstDay; !d.isAfter(lastDay); d = d.plusDays(1)) {
+            if (bookedDates.contains(d)) {
+                result.add(CalendarDayResponse.builder()
+                        .date(d.toString()).color("red").type("BOOKED").interactive(false).build());
+            } else if (ownerBlocked.contains(d)) {
+                result.add(CalendarDayResponse.builder()
+                        .date(d.toString()).color("red").type("BLOCKED_BY_OWNER").interactive(true).build());
+            } else {
+                result.add(CalendarDayResponse.builder()
+                        .date(d.toString()).color("green").type("AVAILABLE").interactive(true).build());
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Owner: toggle a single date — block it if available, unblock it if owner-blocked.
+     * Guards:
+     * - Past dates are rejected (cannot retroactively change history)
+     * - Dates with an active booking cannot be blocked/unblocked
+     */
+    @Transactional
+    public ToggleBlockedDateResponse toggleBlockedDate(UUID ownerId, UUID truckId, LocalDate date) {
+        Truck truck = findTruckOwnedBy(truckId, ownerId);
+
+        if (date.isBefore(LocalDate.now())) {
+            throw new BusinessException("PAST_DATE", "Cannot modify availability for past dates");
+        }
+
+        boolean hasBooking = bookingRepository.existsConflictingBooking(truckId, date, date);
+        if (hasBooking) {
+            throw new BusinessException("DATE_HAS_BOOKING",
+                    "This date has an active booking and cannot be blocked or unblocked");
+        }
+
+        java.util.Optional<TruckBlockedDate> existing = blockedDateRepository.findByTruckIdAndBlockedDate(truckId, date);
+        if (existing.isPresent()) {
+            blockedDateRepository.delete(existing.get());
+            log.info("Date unblocked: truckId={}, date={}", truckId, date);
+            return ToggleBlockedDateResponse.builder()
+                    .date(date.toString()).action("UNBLOCKED").color("green").build();
+        } else {
+            blockedDateRepository.save(TruckBlockedDate.builder().truck(truck).blockedDate(date).build());
+            log.info("Date blocked: truckId={}, date={}", truckId, date);
+            return ToggleBlockedDateResponse.builder()
+                    .date(date.toString()).action("BLOCKED").color("red").build();
+        }
     }
 
     /**
@@ -490,7 +645,8 @@ public class TruckService {
             throw new BusinessException("INVALID_DATE_RANGE", "startDate cannot be in the past");
         }
 
-        boolean hasConflict = bookingRepository.existsConflictingBooking(truckId, startDate, endDate);
+        boolean hasConflict = bookingRepository.existsConflictingBooking(truckId, startDate, endDate)
+                || blockedDateRepository.existsBlockedDateInRange(truckId, startDate, endDate);
 
         if (!hasConflict) {
             return TruckAvailabilityResponse.builder()
@@ -588,7 +744,7 @@ public class TruckService {
             // hasStatus && hasVehicleType && hasKeyword
             page = truckRepository.searchByKeywordAndStatusAndVehicleType(keyword, truckStatus, normalizedVehicleType, pageable);
         }
-        return buildPagedResponse(page);
+        return buildPagedResponseWithAvailability(page);
     }
 
     /**
@@ -598,7 +754,7 @@ public class TruckService {
     public PagedResponse<TruckListResponse> getPendingTrucks(Pageable pageable) {
         Page<Truck> page = truckRepository.findByStatusActiveWithOwner(
                 TruckStatus.PENDING_APPROVAL, pageable);
-        return buildPagedResponse(page);
+        return buildPagedResponseWithAvailability(page);
     }
 
     /**
@@ -708,14 +864,15 @@ public class TruckService {
                 .pricePerDay(truck.getPricePerDay())
                 .costPerMile(truck.getCostPerMile())
                 .locationCity(truck.getLocationCity())
+                .locationState(truck.getLocationState())
                 .latitude(truck.getLatitude())
                 .longitude(truck.getLongitude())
                 .capacityTons(truck.getCapacityTons())
+                .engine(truck.getEngine())
                 .torque(truck.getTorque())
+                .towingCapacity(truck.getTowingCapacity())
                 .mileageTotal(truck.getMileageTotal())
                 .year(truck.getYear())
-                .color(truck.getColor())
-                .fuelType(truck.getFuelType() != null ? truck.getFuelType().name() : null)
                 .vinNumber(truck.getVinNumber())
                 .status(truck.getStatus().name())
                 .rejectionReason(truck.getRejectionReason())
@@ -737,6 +894,12 @@ public class TruckService {
                 } else {
                     builder.availabilityStatus("RENTED");
                     builder.rentedUntil(activeBooking.getEndDate().toString());
+                    builder.rentalInfo(TruckResponse.RentalInfo.builder()
+                            .renterName(activeBooking.getRenter().getFullname())
+                            .bookingNumber(activeBooking.getBookingNumber())
+                            .startDate(activeBooking.getStartDate().toString())
+                            .endDate(activeBooking.getEndDate().toString())
+                            .build());
                 }
             }
             case INACTIVE -> {
@@ -763,13 +926,15 @@ public class TruckService {
                 .pricePerDay(truck.getPricePerDay())
                 .costPerMile(truck.getCostPerMile())
                 .locationCity(truck.getLocationCity())
+                .locationState(truck.getLocationState())
                 .latitude(truck.getLatitude())
                 .longitude(truck.getLongitude())
                 .capacityTons(truck.getCapacityTons())
+                .engine(truck.getEngine())
+                .torque(truck.getTorque())
+                .towingCapacity(truck.getTowingCapacity())
                 .description(truck.getDescription())
                 .year(truck.getYear())
-                .color(truck.getColor())
-                .fuelType(truck.getFuelType() != null ? truck.getFuelType().name() : null)
                 .vinNumber(truck.getVinNumber())
                 .status(truck.getStatus().name())
                 .insured(truck.isInsured())
@@ -900,22 +1065,26 @@ public class TruckService {
             case APPROVED -> {
                 if (activeBooking == null) {
                     response.setAvailabilityStatus("AVAILABLE");
+                    response.setDisplayStatus("Available");
                 } else {
                     response.setAvailabilityStatus("RENTED");
+                    response.setDisplayStatus("Rented");
                     response.setRentedUntil(activeBooking.getEndDate().toString());
                 }
             }
             case INACTIVE -> {
                 response.setAvailabilityStatus("UNAVAILABLE");
+                response.setDisplayStatus("Not Available");
                 response.setUnavailableReason("Deactivated by owner");
             }
             case PENDING_APPROVAL -> {
                 response.setAvailabilityStatus("UNAVAILABLE");
+                response.setDisplayStatus("Not Available");
                 response.setUnavailableReason("Pending approval");
             }
             default -> {
-                // REJECTED trucks should not reach here (filtered in JPQL)
                 response.setAvailabilityStatus("UNAVAILABLE");
+                response.setDisplayStatus("Not Available");
             }
         }
     }

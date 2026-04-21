@@ -283,4 +283,50 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
               AND t.status = 'PAID_OUT'
             """)
     BigDecimal sumSettledOwnerPayouts();
+
+    /**
+     * Owner dashboard: sum of ownerAmount still awaiting payout (PAYOUT_PENDING).
+     * Money is owed to the owner but hasn't transferred yet (no gateway account linked,
+     * or transfer failed and is pending retry).
+     */
+    @Query("""
+            SELECT COALESCE(SUM(t.ownerAmount), 0)
+            FROM PaymentTransaction t
+            WHERE t.booking.owner.id = :ownerId
+              AND t.type = 'PAYOUT'
+              AND t.status = 'PAYOUT_PENDING'
+            """)
+    BigDecimal sumOwnerPendingPayouts(@Param("ownerId") UUID ownerId);
+
+    /**
+     * Owner dashboard: monthly earnings for the last 12 months.
+     * Sums ownerAmount from PAYOUT transactions (PAID_OUT + PAYOUT_PENDING)
+     * grouped by month. Returns [month (YYYY-MM), revenue] pairs, oldest first.
+     * Months with no activity are not returned — caller handles the gap.
+     */
+    @Query(value = """
+            SELECT TO_CHAR(pt.created_at AT TIME ZONE 'UTC', 'YYYY-MM') AS month,
+                   COALESCE(SUM(pt.owner_amount), 0) AS revenue
+            FROM payment_transactions pt
+            JOIN bookings b ON b.id = pt.booking_id
+            WHERE b.owner_id = :ownerId
+              AND pt.type = 'PAYOUT'
+              AND pt.status IN ('PAID_OUT', 'PAYOUT_PENDING')
+              AND pt.created_at >= NOW() - INTERVAL '12 months'
+            GROUP BY TO_CHAR(pt.created_at AT TIME ZONE 'UTC', 'YYYY-MM')
+            ORDER BY month ASC
+            """, nativeQuery = true)
+    List<Object[]> sumOwnerRevenueGroupedByMonth(@Param("ownerId") UUID ownerId);
+
+    /** Most recent PAID_OUT payout date for an owner — used in admin owner detail stats. */
+    @Query("""
+            SELECT t.createdAt
+            FROM PaymentTransaction t
+            WHERE t.booking.owner.id = :ownerId
+              AND t.type = 'PAYOUT'
+              AND t.status = 'PAID_OUT'
+            ORDER BY t.createdAt DESC
+            LIMIT 1
+            """)
+    Optional<java.time.Instant> findLastPayoutDateForOwner(@Param("ownerId") UUID ownerId);
 }

@@ -18,6 +18,7 @@ public class BookedDatesResponse {
 
     private String truckId;
     private List<BookedRange> bookedRanges;
+    private List<String> blockedDates;  // owner-blocked individual dates (YYYY-MM-DD) — for renter date picker
 
     @Data
     @Builder

@@ -22,10 +22,10 @@ import java.util.UUID;
  * - mileage_amount is calculated when the truck is returned
  *
  * LIFECYCLE:
- * PENDING → CONFIRMED (owner accepts) or REJECTED (owner declines)
- * CONFIRMED → ACTIVE (owner records odometer_start at handoff)
- * ACTIVE → COMPLETED (owner records odometer_end at return)
- * PENDING or CONFIRMED → CANCELLED (renter, owner, or admin)
+ * PENDING → AWAITING_APPROVAL (renter pays) → CONFIRMED (owner approves) or REJECTED (owner declines)
+ * CONFIRMED → ACTIVE (renter records odometer_start when picking up the truck)
+ * ACTIVE → COMPLETED (renter records odometer_end when returning the truck)
+ * PENDING, AWAITING_APPROVAL, or CONFIRMED → CANCELLED (renter, owner, or admin)
  */
 @Entity
 @Table(name = "bookings")
@@ -76,7 +76,7 @@ public class Booking extends BaseAuditEntity {
     @Column(name = "day_amount", precision = 14, scale = 2, nullable = false)
     private BigDecimal dayAmount;
 
-    // Odometer fields — filled by owner at handoff and return
+    // Odometer fields — filled by renter at pickup (start) and return (end)
     @Column(name = "odometer_start")
     private Integer odometerStart;
 

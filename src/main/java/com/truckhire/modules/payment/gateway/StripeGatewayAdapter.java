@@ -198,10 +198,12 @@ public class StripeGatewayAdapter implements GatewayPort {
                 addrBuilder.setCity(owner.getCity());
                 hasAddress = true;
             }
-            if (owner.getZipcode() != null && !owner.getZipcode().isBlank()) {
-                addrBuilder.setPostalCode(owner.getZipcode());
-                hasAddress = true;
-            }
+            // Zipcode is intentionally excluded because Stripe strictly validates it based on the
+            // inferred country (e.g., US if not provided), which breaks testing with dummy data.
+            // if (owner.getZipcode() != null && !owner.getZipcode().isBlank()) {
+            //     addrBuilder.setPostalCode(owner.getZipcode());
+            //     hasAddress = true;
+            // }
             if (hasAddress) {
                 individualBuilder.setAddress(addrBuilder.build());
             }

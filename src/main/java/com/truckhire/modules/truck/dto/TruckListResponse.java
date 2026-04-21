@@ -25,6 +25,7 @@ public class TruckListResponse {
     private BigDecimal pricePerDay;
     private BigDecimal costPerMile;
     private String locationCity;
+    private String locationState;
     private Double latitude;
     private Double longitude;
     private Integer capacityTons;
@@ -32,9 +33,10 @@ public class TruckListResponse {
     private String description;
 
     // Specs
+    private String engine;
+    private String torque;
+    private String towingCapacity;
     private Integer year;
-    private String color;
-    private String fuelType;
     private String vinNumber;
 
     // Owner
@@ -50,8 +52,9 @@ public class TruckListResponse {
     /** True when the owner has attached an active insurance plan */
     private boolean insured;
 
-    // Availability enrichment (Phase 5 — populated in public search)
-    private String availabilityStatus;  // "AVAILABLE", "RENTED", "UNAVAILABLE"
+    // Availability enrichment — populated on all truck list endpoints
+    private String availabilityStatus;  // raw: "AVAILABLE", "RENTED", "UNAVAILABLE"
+    private String displayStatus;       // UI label: "Available", "Rented", "Not Available"
     private String rentedUntil;         // ISO date, only when RENTED
     private String unavailableReason;   // only when UNAVAILABLE
 }

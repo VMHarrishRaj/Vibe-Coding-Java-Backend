@@ -27,6 +27,8 @@ public class AdminPaymentListResponse {
     private BigDecimal total;        // amount charged to renter
     private BigDecimal ownerShare;   // owner_amount (null until payout initiated)
     private BigDecimal platformShare;// platform_fee (null until payout initiated)
-    private String paymentStatus;    // SUCCEEDED / FAILED / REFUNDED / PENDING
-    private String settlementStatus; // SETTLED / PAYOUT_PENDING / PENDING (MILEAGE rows always show PENDING until combined payout)
+    private String paymentStatus;           // raw: SUCCEEDED / FAILED / REFUNDED / PENDING
+    private String displayPaymentStatus;    // UI label: "Received" / "Failed" / "Refunded" / "Pending"
+    private String settlementStatus;        // raw: SETTLED / PAYOUT_PENDING / PENDING
+    private String displaySettlementStatus; // UI label: "Settled" / "Settlement Pending" / "Pending"
 }

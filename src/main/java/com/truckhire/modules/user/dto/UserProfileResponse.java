@@ -35,10 +35,15 @@ public class UserProfileResponse {
 
     private String id;
     private String fullname;
+    private String middleName;
     private String email;
     private String phone;
+    private String alternatePhone;
+    private String companyName;
+    private String taxId;
     private String role;
     private String status;
+    private String displayStatus; // UI label: Active / Waiting for Approval / Inactive / Rejected
 
     // ── Profile fields ──
     private String dob;
@@ -66,4 +71,9 @@ public class UserProfileResponse {
 
     // ── OWNER role only — null for ADMIN/RENTER ──
     private List<OwnedVehicleSummary> vehiclesOwned;
+
+    // ── OWNER aggregated payment stats (null for ADMIN/RENTER) ──
+    private java.math.BigDecimal lifetimeEarnings;  // sum of all PAID_OUT payout transactions
+    private java.math.BigDecimal pendingPayouts;    // sum of all PAYOUT_PENDING payout transactions
+    private String lastPaymentDate;                 // createdAt of most recent PAID_OUT payout
 }
