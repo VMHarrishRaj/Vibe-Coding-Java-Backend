@@ -14,6 +14,8 @@ import com.truckhire.modules.addon.service.AddonService;
 import com.truckhire.modules.payment.service.PaymentService;
 import com.truckhire.modules.truck.entity.Truck;
 import com.truckhire.modules.truck.entity.TruckStatus;
+import com.truckhire.modules.truck.entity.TruckBlockedDate;
+import com.truckhire.modules.truck.repository.TruckBlockedDateRepository;
 import com.truckhire.modules.truck.repository.TruckDocumentRepository;
 import com.truckhire.modules.truck.repository.TruckRepository;
 import com.truckhire.modules.user.entity.User;
@@ -48,9 +50,9 @@ import java.util.stream.Collectors;
  * total_cost = (total_days × price_per_day) + (miles_driven × cost_per_mile)
  *
  * STATUS TRANSITIONS:
- * PENDING → CONFIRMED (owner accepts) | REJECTED (owner declines) | CANCELLED
- * CONFIRMED → ACTIVE (owner handoff) | CANCELLED
- * ACTIVE → COMPLETED (owner return)
+ * PENDING → AWAITING_APPROVAL (renter pays) → CONFIRMED (owner approves) | REJECTED (owner declines)
+ * CONFIRMED → ACTIVE (renter records odometer at pickup)
+ * ACTIVE → COMPLETED (renter records odometer at return)
  */
 @Slf4j
 @Service
@@ -67,6 +69,7 @@ public class BookingService {
     private final UserDocumentRepository userDocumentRepository;
     private final PaymentService paymentService;
     private final AddonService addonService;
+    private final TruckBlockedDateRepository blockedDateRepository;
 
     public BookingService(
             BookingRepository bookingRepository,
@@ -76,7 +79,8 @@ public class BookingService {
             UserRepository userRepository,
             UserDocumentRepository userDocumentRepository,
             @Lazy PaymentService paymentService,
-            AddonService addonService) {
+            AddonService addonService,
+            TruckBlockedDateRepository blockedDateRepository) {
         this.bookingRepository = bookingRepository;
         this.historyRepository = historyRepository;
         this.truckRepository = truckRepository;
@@ -85,6 +89,7 @@ public class BookingService {
         this.userDocumentRepository = userDocumentRepository;
         this.paymentService = paymentService;
         this.addonService = addonService;
+        this.blockedDateRepository = blockedDateRepository;
     }
 
     // ═══════════════════════════════════════
@@ -139,6 +144,10 @@ public class BookingService {
         if (bookingRepository.existsConflictingBooking(truck.getId(), startDate, endDate)) {
             throw new BusinessException("TRUCK_NOT_AVAILABLE",
                     "This truck is already booked for the selected dates");
+        }
+        if (blockedDateRepository.existsBlockedDateInRange(truck.getId(), startDate, endDate)) {
+            throw new BusinessException("TRUCK_NOT_AVAILABLE",
+                    "The owner has blocked one or more dates in the selected range");
         }
 
         // Snapshot prices at booking time — never changes after this
@@ -319,19 +328,19 @@ public class BookingService {
     }
 
     /**
-     * Owner records odometer at truck handoff — transitions booking CONFIRMED → ACTIVE.
+     * Renter records odometer at truck pickup — transitions booking CONFIRMED → ACTIVE.
      *
      * The odometer reading must be >= the truck's current mileage to catch
      * obviously wrong values. It cannot be less than what the truck shows.
      */
     @Transactional
-    public BookingResponse recordOdometerStart(UUID ownerId, UUID bookingId, OdometerUpdateRequest request) {
+    public BookingResponse recordOdometerStart(UUID renterId, UUID bookingId, OdometerUpdateRequest request) {
         Booking booking = loadBookingWithDetails(bookingId);
-        verifyOwner(booking, ownerId);
+        verifyRenter(booking, renterId);
 
         if (booking.getStatus() != BookingStatus.CONFIRMED) {
             throw new BusinessException("INVALID_STATUS_TRANSITION",
-                    "Can only record handoff for CONFIRMED bookings. Current status: " + booking.getStatus());
+                    "Can only start a CONFIRMED booking. Current status: " + booking.getStatus());
         }
 
         Truck truck = booking.getTruck();
@@ -345,9 +354,9 @@ public class BookingService {
         booking.setHandedOffAt(Instant.now());
         booking.setStatus(BookingStatus.ACTIVE);
         Booking saved = bookingRepository.save(booking);
-        recordHistory(saved, BookingStatus.ACTIVE, booking.getOwner(), request.getNotes());
+        recordHistory(saved, BookingStatus.ACTIVE, booking.getRenter(), request.getNotes());
 
-        log.info("Booking handoff recorded: id={}, odometerStart={}", bookingId, request.getOdometerReading());
+        log.info("Booking started by renter: id={}, odometerStart={}", bookingId, request.getOdometerReading());
         return mapToFullResponse(saved);
     }
 
