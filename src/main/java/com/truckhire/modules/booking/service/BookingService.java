@@ -655,6 +655,7 @@ public class BookingService {
                 .id(booking.getId().toString())
                 .bookingNumber(booking.getBookingNumber())
                 .status(booking.getStatus().name())
+                .displayStatus(toDisplayStatus(booking.getStatus(), booking.getEndDate()))
                 .createdAt(booking.getCreatedAt() != null ? booking.getCreatedAt().toString() : null)
                 .renter(BookingResponse.RenterInfo.builder()
                         .id(renter.getId().toString())
@@ -737,7 +738,7 @@ public class BookingService {
                 .dayAmount(booking.getDayAmount())
                 .totalAmount(booking.getTotalAmount())
                 .status(booking.getStatus().name())
-                .displayStatus(toDisplayStatus(booking.getStatus()))
+                .displayStatus(toDisplayStatus(booking.getStatus(), booking.getEndDate()))
                 .createdAt(booking.getCreatedAt() != null ? booking.getCreatedAt().toString() : null)
                 .isOverdue(booking.getStatus() == BookingStatus.ACTIVE
                         && booking.getEndDate().isBefore(java.time.LocalDate.now()))
@@ -746,16 +747,17 @@ public class BookingService {
 
     /**
      * Maps raw BookingStatus to the grouped display label used in the UI.
-     * ONGOING  = actively rented out (ACTIVE)
-     * UPCOMING = payment captured or confirmed, not yet started (PENDING, AWAITING_APPROVAL, CONFIRMED)
+     * Ongoing  = actively rented, end date not yet passed
+     * Overdue  = actively rented but end date has passed (still ACTIVE in DB)
+     * Upcoming = payment captured or confirmed, not yet started
      */
-    private String toDisplayStatus(BookingStatus status) {
+    private String toDisplayStatus(BookingStatus status, LocalDate endDate) {
         return switch (status) {
-            case ACTIVE -> "ONGOING";
-            case PENDING, AWAITING_APPROVAL, CONFIRMED -> "UPCOMING";
-            case COMPLETED -> "COMPLETED";
-            case REJECTED -> "REJECTED";
-            case CANCELLED -> "CANCELLED";
+            case ACTIVE -> endDate != null && endDate.isBefore(LocalDate.now()) ? "Overdue" : "Ongoing";
+            case PENDING, AWAITING_APPROVAL, CONFIRMED -> "Upcoming";
+            case COMPLETED -> "Completed";
+            case REJECTED -> "Rejected";
+            case CANCELLED -> "Cancelled";
         };
     }
 

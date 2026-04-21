@@ -3,6 +3,8 @@ package com.truckhire.modules.payment.controller;
 import com.truckhire.common.dto.ApiResponse;
 import com.truckhire.common.dto.PagedResponse;
 import com.truckhire.common.util.SecurityUtils;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import com.truckhire.modules.payment.dto.AdminPaymentsByBookingResponse;
 import com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse;
 import com.truckhire.modules.payment.dto.AdminPaymentListResponse;
@@ -127,5 +129,18 @@ public class PlatformAdminController {
             @PathVariable UUID id) {
         AdminInvoiceDetailResponse response = paymentService.getAdminInvoiceDetail(id);
         return ResponseEntity.ok(ApiResponse.success("Invoice detail retrieved", response));
+    }
+
+    /**
+     * GET /admin/payments/{id}/download — download invoice as PDF.
+     * Returns a binary PDF stream with Content-Disposition: attachment so the browser triggers a file save.
+     */
+    @GetMapping("/admin/payments/{id}/download")
+    public ResponseEntity<byte[]> downloadInvoicePdf(@PathVariable UUID id) {
+        byte[] pdf = paymentService.generateInvoicePdf(id);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.setContentDispositionFormData("attachment", "invoice-" + id + ".pdf");
+        return ResponseEntity.ok().headers(headers).body(pdf);
     }
 }

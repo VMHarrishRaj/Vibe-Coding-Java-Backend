@@ -28,6 +28,7 @@ public class AdminUserListResponse {
     private String phone;
     private String role;
     private String status;
+    private String displayStatus; // UI label: Active / Waiting for Approval / Inactive / Rejected
     private boolean kycVerified;
     private String createdAt;
     private long vehicleCount;

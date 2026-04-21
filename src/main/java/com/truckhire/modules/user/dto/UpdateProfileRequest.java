@@ -34,6 +34,18 @@ public class UpdateProfileRequest {
     @Size(min = 2, max = 255, message = "Name must be between 2 and 255 characters")
     private String fullname;
 
+    @Size(max = 100, message = "Middle name must not exceed 100 characters")
+    private String middleName;
+
+    @Size(max = 20, message = "Alternate phone must not exceed 20 characters")
+    private String alternatePhone;
+
+    @Size(max = 255, message = "Company name must not exceed 255 characters")
+    private String companyName;
+
+    @Size(max = 50, message = "Tax ID must not exceed 50 characters")
+    private String taxId;
+
     @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$", message = "DOB must be in YYYY-MM-DD format")
     private String dob;
 

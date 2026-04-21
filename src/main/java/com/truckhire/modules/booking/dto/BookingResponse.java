@@ -20,7 +20,8 @@ public class BookingResponse {
 
     private String id;
     private String bookingNumber;
-    private String status;
+    private String status;        // raw enum: PENDING, AWAITING_APPROVAL, CONFIRMED, ACTIVE, COMPLETED, REJECTED, CANCELLED
+    private String displayStatus; // UI label: Upcoming, Ongoing, Overdue, Completed, Rejected, Cancelled
     private String createdAt;
 
     // Renter info

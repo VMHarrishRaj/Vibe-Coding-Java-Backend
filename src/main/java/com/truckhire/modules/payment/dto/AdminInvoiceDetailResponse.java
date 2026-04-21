@@ -23,8 +23,10 @@ public class AdminInvoiceDetailResponse {
     private String paymentDate;
     private String gateway;
     private String invoiceType;      // "DAY_RATE" or "MILEAGE"
-    private String paymentStatus;
-    private String settlementStatus;
+    private String paymentStatus;           // raw: SUCCEEDED / FAILED / REFUNDED / PENDING
+    private String displayPaymentStatus;    // UI label: "Received" / "Failed" / "Refunded" / "Pending"
+    private String settlementStatus;        // raw: SETTLED / PAYOUT_PENDING / PENDING
+    private String displaySettlementStatus; // UI label: "Settled" / "Settlement Pending" / "Pending"
 
     // Payment amounts
     private BigDecimal total;        // amount for this specific transaction
@@ -96,10 +98,14 @@ public class AdminInvoiceDetailResponse {
     @AllArgsConstructor
     public static class OwnerInfo {
         private String fullname;
+        private String email;
         private boolean stripeConnected; // true when owner has completed Stripe Connect onboarding
         private String bankName;
         private String accountNumber;   // masked: ****XXXX (last 4 digits only) — null if no bank account linked
         private String routingNumber;   // null if no bank account linked
+        private String settlementId;    // gateway transfer ID from the payout transaction (null until payout done)
+        private String settlementDate;  // ISO timestamp of the payout transaction (null until payout done)
+        private String settlementMethod;// "STRIPE" or "RAZORPAY" (null until payout done)
     }
 
     @Data
@@ -123,7 +129,9 @@ public class AdminInvoiceDetailResponse {
         private String invoiceNumber;
         private String paymentDate;
         private String paymentStatus;
+        private String displayPaymentStatus;
         private String settlementStatus;
+        private String displaySettlementStatus;
         private Integer milesDriven;
         private BigDecimal costPerMile;
         private BigDecimal mileageAmount;
@@ -160,7 +168,9 @@ public class AdminInvoiceDetailResponse {
         private String invoiceType;     // "DAY_RATE" or "MILEAGE"
         private String paymentDate;
         private String paymentStatus;
+        private String displayPaymentStatus;
         private String settlementStatus;
+        private String displaySettlementStatus;
         private BigDecimal amount;      // amount for this specific invoice
         private BigDecimal ownerShare;
         private BigDecimal platformShare;

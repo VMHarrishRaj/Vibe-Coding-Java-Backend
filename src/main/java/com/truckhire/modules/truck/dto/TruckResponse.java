@@ -46,8 +46,6 @@ public class TruckResponse {
     private String torque;
     private Integer mileageTotal;
     private Integer year;
-    private String color;
-    private String fuelType;
     private String vinNumber;
 
     // ── Status ──

@@ -33,8 +33,6 @@ public class TruckListResponse {
 
     // Specs
     private Integer year;
-    private String color;
-    private String fuelType;
     private String vinNumber;
 
     // Owner

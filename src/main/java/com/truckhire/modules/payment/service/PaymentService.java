@@ -843,13 +843,21 @@ public class PaymentService {
             String raw = owner.getBankAccountNumber();
             maskedAccount = raw.length() > 4 ? "****" + raw.substring(raw.length() - 4) : "****";
         }
+        // Fetch payout transaction to populate settlement fields
+        java.util.Optional<PaymentTransaction> payoutTxn = transactionRepository
+                .findFirstByBookingIdAndTypeOrderByCreatedAtDesc(booking.getId(), PaymentType.PAYOUT);
+
         com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.OwnerInfo ownerInfo =
                 com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.OwnerInfo.builder()
                         .fullname(owner.getFullname())
+                        .email(owner.getEmail())
                         .stripeConnected(owner.getStripeAccountId() != null)
                         .bankName(owner.getBankAccountNumber() != null ? owner.getBankName() : null)
                         .accountNumber(maskedAccount)
                         .routingNumber(owner.getBankAccountNumber() != null ? owner.getBankRoutingNumber() : null)
+                        .settlementId(payoutTxn.map(PaymentTransaction::getGatewayTransferId).orElse(null))
+                        .settlementDate(payoutTxn.map(p -> p.getCreatedAt() != null ? p.getCreatedAt().toString() : null).orElse(null))
+                        .settlementMethod(payoutTxn.map(p -> p.getGateway() != null ? p.getGateway().name() : null).orElse(null))
                         .build();
 
         boolean isMileage = txn.getType() == PaymentType.MILEAGE_TOPUP;
@@ -879,7 +887,9 @@ public class PaymentService {
                         .invoiceNumber(m.getInvoiceNumber())
                         .paymentDate(m.getCreatedAt() != null ? m.getCreatedAt().toString() : null)
                         .paymentStatus(m.getStatus().name())
+                        .displayPaymentStatus(toDisplayPaymentStatus(m.getStatus().name()))
                         .settlementStatus(resolveSettlementStatus(m))
+                        .displaySettlementStatus(toDisplaySettlementStatus(resolveSettlementStatus(m)))
                         .milesDriven(milesDriven)
                         .costPerMile(booking.getCostPerMile())
                         .mileageAmount(mileageAmt)
@@ -914,7 +924,9 @@ public class PaymentService {
                 .gateway(txn.getGateway().name())
                 .invoiceType(isMileage ? "MILEAGE" : "DAY_RATE")
                 .paymentStatus(txn.getStatus().name())
+                .displayPaymentStatus(toDisplayPaymentStatus(txn.getStatus().name()))
                 .settlementStatus(resolveSettlementStatus(txn))
+                .displaySettlementStatus(toDisplaySettlementStatus(resolveSettlementStatus(txn)))
                 .total(txn.getAmount())
                 .ownerShare(txn.getOwnerAmount())
                 .platformShare(txn.getPlatformFee())
@@ -991,7 +1003,9 @@ public class PaymentService {
                 .ownerShare(txn.getOwnerAmount())
                 .platformShare(txn.getPlatformFee())
                 .paymentStatus(txn.getStatus().name())
+                .displayPaymentStatus(toDisplayPaymentStatus(txn.getStatus().name()))
                 .settlementStatus(resolveSettlementStatus(txn))
+                .displaySettlementStatus(toDisplaySettlementStatus(resolveSettlementStatus(txn)))
                 .build();
     }
 
@@ -1130,7 +1144,9 @@ public class PaymentService {
                 .ownerShare(ownerShare)
                 .platformShare(platformShare)
                 .paymentStatus(paymentStatus)
+                .displayPaymentStatus(toDisplayPaymentStatus(paymentStatus.equals("FULLY_PAID") ? "SUCCEEDED" : paymentStatus))
                 .settlementStatus(resolveSettlementStatus(charge))
+                .displaySettlementStatus(toDisplaySettlementStatus(resolveSettlementStatus(charge)))
                 .hasMileage(hasMileage)
                 .build();
     }
@@ -1149,7 +1165,9 @@ public class PaymentService {
                     .invoiceType("MILEAGE")
                     .paymentDate(mileageDetail.getPaymentDate())
                     .paymentStatus(mileageDetail.getPaymentStatus())
+                    .displayPaymentStatus(mileageDetail.getDisplayPaymentStatus())
                     .settlementStatus(mileageDetail.getSettlementStatus())
+                    .displaySettlementStatus(mileageDetail.getDisplaySettlementStatus())
                     .amount(mileageDetail.getMileageAmount())
                     .ownerShare(mileageDetail.getOwnerShare())
                     .platformShare(mileageDetail.getPlatformShare())
@@ -1164,7 +1182,9 @@ public class PaymentService {
                 .invoiceType("DAY_RATE")
                 .paymentDate(charge.getCreatedAt() != null ? charge.getCreatedAt().toString() : null)
                 .paymentStatus(charge.getStatus().name())
+                .displayPaymentStatus(toDisplayPaymentStatus(charge.getStatus().name()))
                 .settlementStatus(resolveSettlementStatus(charge))
+                .displaySettlementStatus(toDisplaySettlementStatus(resolveSettlementStatus(charge)))
                 .amount(charge.getAmount())
                 .ownerShare(charge.getOwnerAmount())
                 .platformShare(charge.getPlatformFee())
@@ -1180,6 +1200,23 @@ public class PaymentService {
                 .findFirstByBookingIdAndTypeOrderByCreatedAtDesc(txn.getBooking().getId(), PaymentType.PAYOUT);
         if (payout.isEmpty()) return "PENDING";
         return payout.get().getStatus() == PaymentStatus.PAID_OUT ? "SETTLED" : "PAYOUT_PENDING";
+    }
+
+    private String toDisplayPaymentStatus(String rawStatus) {
+        return switch (rawStatus) {
+            case "SUCCEEDED" -> "Received";
+            case "FAILED"    -> "Failed";
+            case "REFUNDED"  -> "Refunded";
+            default          -> "Pending";
+        };
+    }
+
+    private String toDisplaySettlementStatus(String rawStatus) {
+        return switch (rawStatus) {
+            case "SETTLED"       -> "Settled";
+            case "PAYOUT_PENDING" -> "Settlement Pending";
+            default              -> "Pending";
+        };
     }
 
     // ═══════════════════════════════════════
@@ -1317,6 +1354,116 @@ public class PaymentService {
             case "JPY", "KRW" -> amount.longValue();
             default -> amount.multiply(BigDecimal.valueOf(100)).longValue();
         };
+    }
+
+    // ═══════════════════════════════════════
+    // INVOICE PDF DOWNLOAD
+    // ═══════════════════════════════════════
+
+    /**
+     * Generates a PDF invoice for a CHARGE transaction and returns it as a byte array.
+     * Used by GET /admin/payments/{id}/download.
+     */
+    @Transactional(readOnly = true)
+    public byte[] generateInvoicePdf(UUID transactionId) {
+        com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse detail = getAdminInvoiceDetail(transactionId);
+
+        try (java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+            com.lowagie.text.Document doc = new com.lowagie.text.Document(com.lowagie.text.PageSize.A4, 50, 50, 50, 50);
+            com.lowagie.text.pdf.PdfWriter.getInstance(doc, out);
+            doc.open();
+
+            com.lowagie.text.Font titleFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 18, com.lowagie.text.Font.BOLD);
+            com.lowagie.text.Font headerFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 11, com.lowagie.text.Font.BOLD);
+            com.lowagie.text.Font normalFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 10);
+            com.lowagie.text.Font smallFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 9);
+
+            // ── Header ──
+            doc.add(new com.lowagie.text.Paragraph("TruckHire — Invoice", titleFont));
+            doc.add(new com.lowagie.text.Paragraph("Invoice #: " + detail.getInvoiceNumber(), headerFont));
+            doc.add(new com.lowagie.text.Paragraph("Booking #: " + detail.getBookingNumber(), normalFont));
+            doc.add(new com.lowagie.text.Paragraph("Payment Date: " + nullSafe(detail.getPaymentDate()), normalFont));
+            doc.add(new com.lowagie.text.Paragraph("Status: " + nullSafe(detail.getDisplayPaymentStatus()), normalFont));
+            doc.add(com.lowagie.text.Chunk.NEWLINE);
+
+            // ── Renter ──
+            if (detail.getBooking() != null && detail.getBooking().getRenter() != null) {
+                com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.RenterInfo renter = detail.getBooking().getRenter();
+                doc.add(new com.lowagie.text.Paragraph("Billed To", headerFont));
+                doc.add(new com.lowagie.text.Paragraph(nullSafe(renter.getFullname()), normalFont));
+                doc.add(new com.lowagie.text.Paragraph(nullSafe(renter.getEmail()), normalFont));
+                doc.add(new com.lowagie.text.Paragraph(nullSafe(renter.getPhone()), normalFont));
+                doc.add(com.lowagie.text.Chunk.NEWLINE);
+            }
+
+            // ── Booking Details ──
+            if (detail.getBooking() != null) {
+                com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.BookingDetail booking = detail.getBooking();
+                doc.add(new com.lowagie.text.Paragraph("Booking Details", headerFont));
+                if (booking.getTruck() != null) {
+                    doc.add(new com.lowagie.text.Paragraph("Vehicle: " + nullSafe(booking.getTruck().getModel())
+                            + " (" + nullSafe(booking.getTruck().getRegistrationNumber()) + ")", normalFont));
+                }
+                doc.add(new com.lowagie.text.Paragraph("Period: " + nullSafe(booking.getStartDate()) + " to " + nullSafe(booking.getEndDate()), normalFont));
+                doc.add(new com.lowagie.text.Paragraph("Pickup: " + nullSafe(booking.getPickupLocation()), normalFont));
+                doc.add(new com.lowagie.text.Paragraph("Dropoff: " + nullSafe(booking.getDropoffLocation()), normalFont));
+                doc.add(com.lowagie.text.Chunk.NEWLINE);
+            }
+
+            // ── Cost Breakdown ──
+            doc.add(new com.lowagie.text.Paragraph("Cost Breakdown", headerFont));
+            if (detail.getCombinedSummary() != null) {
+                com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.CombinedSummary s = detail.getCombinedSummary();
+                doc.add(new com.lowagie.text.Paragraph("Base Rental: $" + nullSafe(s.getDayAmount()), normalFont));
+                if (s.getMileageAmount() != null && s.getMileageAmount().compareTo(BigDecimal.ZERO) > 0) {
+                    doc.add(new com.lowagie.text.Paragraph("Mileage Charge: $" + s.getMileageAmount(), normalFont));
+                }
+                if (s.getInsuranceCost() != null && s.getInsuranceCost().compareTo(BigDecimal.ZERO) > 0) {
+                    doc.add(new com.lowagie.text.Paragraph("Insurance: $" + s.getInsuranceCost(), normalFont));
+                }
+                if (s.getAdditionalServicesCost() != null && s.getAdditionalServicesCost().compareTo(BigDecimal.ZERO) > 0) {
+                    doc.add(new com.lowagie.text.Paragraph("Additional Services: $" + s.getAdditionalServicesCost(), normalFont));
+                }
+                doc.add(new com.lowagie.text.Paragraph("Total Paid: $" + nullSafe(s.getTotalPaid()), headerFont));
+            } else {
+                doc.add(new com.lowagie.text.Paragraph("Total: $" + nullSafe(detail.getTotal()), headerFont));
+            }
+            doc.add(com.lowagie.text.Chunk.NEWLINE);
+
+            // ── Transaction Reference ──
+            doc.add(new com.lowagie.text.Paragraph("Transaction Reference", headerFont));
+            doc.add(new com.lowagie.text.Paragraph("Transaction ID: " + nullSafe(detail.getTransactionId()), normalFont));
+            doc.add(new com.lowagie.text.Paragraph("Gateway: " + nullSafe(detail.getGateway()), normalFont));
+            if (detail.getCardLast4() != null) {
+                doc.add(new com.lowagie.text.Paragraph("Card: **** **** **** " + detail.getCardLast4(), normalFont));
+            }
+            doc.add(com.lowagie.text.Chunk.NEWLINE);
+
+            // ── Settlement ──
+            doc.add(new com.lowagie.text.Paragraph("Settlement", headerFont));
+            doc.add(new com.lowagie.text.Paragraph("Status: " + nullSafe(detail.getDisplaySettlementStatus()), normalFont));
+            if (detail.getBooking() != null && detail.getBooking().getOwner() != null) {
+                com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.OwnerInfo owner = detail.getBooking().getOwner();
+                doc.add(new com.lowagie.text.Paragraph("Owner: " + nullSafe(owner.getFullname()), normalFont));
+                if (owner.getSettlementId() != null) {
+                    doc.add(new com.lowagie.text.Paragraph("Settlement ID: " + owner.getSettlementId(), normalFont));
+                    doc.add(new com.lowagie.text.Paragraph("Settlement Date: " + nullSafe(owner.getSettlementDate()), normalFont));
+                }
+            }
+            doc.add(com.lowagie.text.Chunk.NEWLINE);
+
+            doc.add(new com.lowagie.text.Paragraph("This is a system-generated invoice.", smallFont));
+
+            doc.close();
+            return out.toByteArray();
+        } catch (Exception e) {
+            throw new com.truckhire.common.exception.BusinessException("PDF_GENERATION_FAILED",
+                    "Failed to generate invoice PDF: " + e.getMessage());
+        }
+    }
+
+    private String nullSafe(Object val) {
+        return val != null ? val.toString() : "—";
     }
 
 }

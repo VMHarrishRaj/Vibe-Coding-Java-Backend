@@ -317,4 +317,16 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             ORDER BY month ASC
             """, nativeQuery = true)
     List<Object[]> sumOwnerRevenueGroupedByMonth(@Param("ownerId") UUID ownerId);
+
+    /** Most recent PAID_OUT payout date for an owner — used in admin owner detail stats. */
+    @Query("""
+            SELECT t.createdAt
+            FROM PaymentTransaction t
+            WHERE t.booking.owner.id = :ownerId
+              AND t.type = 'PAYOUT'
+              AND t.status = 'PAID_OUT'
+            ORDER BY t.createdAt DESC
+            LIMIT 1
+            """)
+    Optional<java.time.Instant> findLastPayoutDateForOwner(@Param("ownerId") UUID ownerId);
 }
