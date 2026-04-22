@@ -19,9 +19,6 @@ import java.util.UUID;
  * Does NOT extend BaseAuditEntity — no soft-delete, no updatedAt.
  * createdAt is always reset on upsert to track the cooldown window
  * from the most recent send (not the original request).
- *
- * Note: existing JWT sessions remain valid after a password reset —
- * no blacklist exists (Phase 10 gap, Redis blacklist planned).
  */
 @Entity
 @Table(name = "password_reset_tokens")

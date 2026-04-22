@@ -14,21 +14,6 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
-/**
- * OTP lifecycle management for the pre-registration verification flow.
- *
- * Responsibilities:
- *   - Generate cryptographically random 6-digit OTP
- *   - Store the pending registration payload in DB (upsert by email)
- *   - Validate OTP on verify — deletes the pending row on success
- *   - Enforce 1-minute cooldown between resend requests
- *
- * The pending_registrations table acts as a temporary store.
- * No user row exists until OTP is verified — that is the point of this service.
- *
- * Future: When Redis is active (Phase 10), replace DB storage with
- * Redis keys (otp:{email}) with TTL=600s, drop the pending_registrations table.
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -41,24 +26,11 @@ public class OtpService {
     private static final int OTP_EXPIRY_MINUTES = 10;
     private static final int RESEND_COOLDOWN_SECONDS = 60;
 
-    /**
-     * Generate a cryptographically random 6-digit OTP.
-     * SecureRandom is used instead of Random to ensure unpredictability.
-     */
     public String generateOtp() {
         SecureRandom random = new SecureRandom();
         return String.format("%06d", random.nextInt(1_000_000));
     }
 
-    /**
-     * Upsert a pending registration row with the given OTP.
-     *
-     * If a row for this email already exists (resend case), it is updated
-     * in-place (same row, new OTP and expiry). If not, a new row is inserted.
-     *
-     * The created_at field is NOT updated on resend — it tracks when the first
-     * request was made, which is what the cooldown check reads.
-     */
     public void storePending(RegisterRequest request, String otp) {
         try {
             String payloadJson = objectMapper.writeValueAsString(request);
@@ -82,19 +54,6 @@ public class OtpService {
         }
     }
 
-    /**
-     * Validate the OTP and consume the pending registration.
-     *
-     * Checks (in order):
-     *   1. Pending row exists for the email
-     *   2. OTP has not expired (expires_at > now)
-     *   3. OTP code matches
-     *
-     * On success: deletes the pending row and returns the original RegisterRequest.
-     * The caller (AuthService.verifyOtp) uses this to create the actual user.
-     *
-     * On any failure: throws BusinessException with an appropriate error code.
-     */
     public RegisterRequest validateAndConsume(String email, String otp) {
         String normalizedEmail = email.toLowerCase().trim();
 
@@ -113,7 +72,6 @@ public class OtpService {
                     "Incorrect OTP. Please check the code and try again.");
         }
 
-        // OTP is valid — deserialize the stored payload and clean up the pending row
         try {
             RegisterRequest originalRequest = objectMapper.readValue(
                     pending.getPayloadJson(), RegisterRequest.class);
@@ -126,29 +84,11 @@ public class OtpService {
         }
     }
 
-    /**
-     * Check whether a pending registration exists for the given email.
-     * Used by initiateRegistration to detect the re-register (OTP re-entry) path.
-     */
     @Transactional(readOnly = true)
     public boolean hasPendingRegistration(String email) {
         return pendingRepo.findByEmail(email.toLowerCase().trim()).isPresent();
     }
 
-    /**
-     * Enforce a 1-minute cooldown between OTP resend requests.
-     *
-     * Reads created_at from the pending row (not updated on resend — tracks
-     * the original request time, which resets only when OTP is fully consumed
-     * or a fresh register is submitted).
-     *
-     * Actually: on resend we upsert the row. created_at is set @PrePersist only,
-     * so it stays as the original creation time. This gives a true 60-second
-     * window from the last resend or initial request.
-     *
-     * Wait — to track per-resend cooldown accurately, we update created_at on resend.
-     * See storePendingForResend() which resets created_at.
-     */
     @Transactional(readOnly = true)
     public void checkResendCooldown(String email) {
         String normalizedEmail = email.toLowerCase().trim();
@@ -163,11 +103,6 @@ public class OtpService {
         });
     }
 
-    /**
-     * Update just the OTP on a pending row — used by the explicit /auth/resend-otp endpoint
-     * where the user is already on the OTP screen and we only need a fresh code.
-     * Does NOT update payload_json (phone/fields unchanged from the pending row).
-     */
     public void updateOtpOnly(String email, String newOtp) {
         String normalizedEmail = email.toLowerCase().trim();
         PendingRegistration pending = pendingRepo.findByEmail(normalizedEmail)
@@ -176,18 +111,10 @@ public class OtpService {
 
         pending.setOtpCode(newOtp);
         pending.setExpiresAt(Instant.now().plus(OTP_EXPIRY_MINUTES, ChronoUnit.MINUTES));
-        pending.setCreatedAt(Instant.now()); // reset cooldown window
+        pending.setCreatedAt(Instant.now());
         pendingRepo.save(pending);
     }
 
-    /**
-     * Update the pending row for a re-register — resets created_at to now
-     * so the cooldown window tracks from this resend, not the original request.
-     *
-     * Also updates payload_json and phone with the latest request data.
-     * This is critical: the user may have corrected their phone number between
-     * attempts, and the old payload_json must not be used at verify-otp time.
-     */
     public void updatePendingForResend(RegisterRequest request, String newOtp) {
         String normalizedEmail = request.getEmail().toLowerCase().trim();
         PendingRegistration pending = pendingRepo.findByEmail(normalizedEmail)
@@ -205,7 +132,7 @@ public class OtpService {
 
         pending.setOtpCode(newOtp);
         pending.setExpiresAt(Instant.now().plus(OTP_EXPIRY_MINUTES, ChronoUnit.MINUTES));
-        pending.setCreatedAt(Instant.now()); // reset cooldown window
+        pending.setCreatedAt(Instant.now());
         pendingRepo.save(pending);
     }
 }
