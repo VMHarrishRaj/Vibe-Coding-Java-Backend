@@ -165,7 +165,7 @@ public class AuthService {
                 .address(original.getAddress())
                 .city(original.getCity())
                 .state(original.getState())
-                .country(original.getCountry() != null ? original.getCountry() : "India")
+                .country(original.getCountry() != null ? original.getCountry() : "United States")
                 .zipcode(original.getZipcode())
                 .status(initialStatus)
                 .kycVerified(false)
