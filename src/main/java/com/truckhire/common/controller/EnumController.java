@@ -3,6 +3,7 @@ package com.truckhire.common.controller;
 import com.truckhire.common.dto.ApiResponse;
 import com.truckhire.modules.payment.dto.PlatformSettingsResponse;
 import com.truckhire.modules.payment.service.PlatformSettingsService;
+import com.truckhire.modules.truck.repository.TruckRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,10 +27,16 @@ import java.util.Map;
 public class EnumController {
 
     private final PlatformSettingsService platformSettingsService;
+    private final TruckRepository truckRepository;
 
     @GetMapping("/payment")
     public ApiResponse<PlatformSettingsResponse> getPaymentConfig() {
         return ApiResponse.success("Payment config retrieved", platformSettingsService.getSettingsResponse());
+    }
+
+    @GetMapping("/cities")
+    public ApiResponse<List<String>> getAvailableCities() {
+        return ApiResponse.success("Available cities retrieved", truckRepository.findDistinctApprovedCities());
     }
 
     @GetMapping("/states")
