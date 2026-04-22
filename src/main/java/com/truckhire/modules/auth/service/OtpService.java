@@ -3,132 +3,136 @@ package com.truckhire.modules.auth.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.truckhire.common.exception.BusinessException;
 import com.truckhire.modules.auth.dto.RegisterRequest;
+import com.truckhire.modules.auth.entity.PendingRegistration;
+import com.truckhire.modules.auth.repository.PendingRegistrationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
-import java.util.concurrent.TimeUnit;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
-/**
- * OTP lifecycle management for the pre-registration verification flow.
- *
- * Backed by Redis instead of the old pending_registrations DB table.
- * Each pending registration is stored as two Redis keys:
- *
- *   otp:reg:payload:{email}  → JSON of RegisterRequest, TTL = 10 min
- *   otp:reg:code:{email}     → OTP code, TTL = 10 min
- *   otp:reg:cooldown:{email} → marker for 60-second resend cooldown, TTL = 60s
- *
- * Redis auto-expires all keys — no cron jobs, no table bloat.
- * If the server restarts, pending OTPs are lost — user just requests a new one.
- * This is acceptable: the old DB table had the same TTL semantics, just messier.
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class OtpService {
 
-    private static final String PAYLOAD_PREFIX  = "otp:reg:payload:";
-    private static final String CODE_PREFIX     = "otp:reg:code:";
-    private static final String COOLDOWN_PREFIX = "otp:reg:cooldown:";
-
-    private static final long OTP_TTL_SECONDS      = 600; // 10 minutes
-    private static final long COOLDOWN_TTL_SECONDS = 60;  // 1 minute
-
-    private final RedisTemplate<String, String> redisTemplate;
+    private final PendingRegistrationRepository pendingRepo;
     private final ObjectMapper objectMapper;
 
+    private static final int OTP_EXPIRY_MINUTES = 10;
+    private static final int RESEND_COOLDOWN_SECONDS = 60;
+
     public String generateOtp() {
-        return String.format("%06d", new SecureRandom().nextInt(1_000_000));
+        SecureRandom random = new SecureRandom();
+        return String.format("%06d", random.nextInt(1_000_000));
     }
 
-    /**
-     * Store (or overwrite) the pending registration payload and OTP in Redis.
-     * Called on first register and on re-register (user came back to the same screen).
-     */
     public void storePending(RegisterRequest request, String otp) {
-        String email = normalize(request.getEmail());
         try {
             String payloadJson = objectMapper.writeValueAsString(request);
-            redisTemplate.opsForValue().set(PAYLOAD_PREFIX + email, payloadJson, OTP_TTL_SECONDS, TimeUnit.SECONDS);
-            redisTemplate.opsForValue().set(CODE_PREFIX + email, otp, OTP_TTL_SECONDS, TimeUnit.SECONDS);
-            redisTemplate.opsForValue().set(COOLDOWN_PREFIX + email, "1", COOLDOWN_TTL_SECONDS, TimeUnit.SECONDS);
-            log.debug("Pending registration stored in Redis for email={}", email);
+            String normalizedEmail = request.getEmail().toLowerCase().trim();
+
+            PendingRegistration pending = pendingRepo.findByEmail(normalizedEmail)
+                    .orElse(PendingRegistration.builder()
+                            .email(normalizedEmail)
+                            .build());
+
+            pending.setPhone(request.getPhone().trim());
+            pending.setOtpCode(otp);
+            pending.setExpiresAt(Instant.now().plus(OTP_EXPIRY_MINUTES, ChronoUnit.MINUTES));
+            pending.setPayloadJson(payloadJson);
+            pendingRepo.save(pending);
+
+            log.debug("Pending registration upserted for email={}", normalizedEmail);
         } catch (Exception e) {
-            throw new BusinessException("OTP_STORE_FAILED", "Failed to store pending registration. Please try again.");
+            throw new BusinessException("OTP_STORE_FAILED",
+                    "Failed to store pending registration. Please try again.");
         }
     }
 
-    /**
-     * Validate the OTP and consume the pending registration.
-     * Returns the original RegisterRequest payload on success.
-     * Deletes all Redis keys for this email.
-     */
     public RegisterRequest validateAndConsume(String email, String otp) {
-        String key = normalize(email);
+        String normalizedEmail = email.toLowerCase().trim();
 
-        String storedPayload = redisTemplate.opsForValue().get(PAYLOAD_PREFIX + key);
-        String storedOtp     = redisTemplate.opsForValue().get(CODE_PREFIX + key);
+        PendingRegistration pending = pendingRepo.findByEmail(normalizedEmail)
+                .orElseThrow(() -> new BusinessException("OTP_NOT_FOUND",
+                        "No pending registration found for this email. Please register again."));
 
-        if (storedOtp == null || storedPayload == null) {
-            throw new BusinessException("OTP_NOT_FOUND",
-                    "No pending registration found for this email. Please register again.");
+        if (Instant.now().isAfter(pending.getExpiresAt())) {
+            pendingRepo.delete(pending);
+            throw new BusinessException("OTP_EXPIRED",
+                    "OTP has expired. Please register again to receive a new code.");
         }
 
-        if (!storedOtp.equals(otp)) {
-            throw new BusinessException("OTP_INVALID", "Incorrect OTP. Please check the code and try again.");
+        if (!pending.getOtpCode().equals(otp)) {
+            throw new BusinessException("OTP_INVALID",
+                    "Incorrect OTP. Please check the code and try again.");
         }
 
         try {
-            RegisterRequest original = objectMapper.readValue(storedPayload, RegisterRequest.class);
-            // Consume — delete all keys
-            redisTemplate.delete(PAYLOAD_PREFIX + key);
-            redisTemplate.delete(CODE_PREFIX + key);
-            redisTemplate.delete(COOLDOWN_PREFIX + key);
-            log.info("OTP verified and consumed for email={}", key);
-            return original;
+            RegisterRequest originalRequest = objectMapper.readValue(
+                    pending.getPayloadJson(), RegisterRequest.class);
+            pendingRepo.delete(pending);
+            log.info("OTP verified for email={}, pending registration consumed", normalizedEmail);
+            return originalRequest;
         } catch (Exception e) {
-            throw new BusinessException("OTP_PARSE_FAILED", "Failed to process registration. Please register again.");
+            throw new BusinessException("OTP_PARSE_FAILED",
+                    "Failed to process registration. Please register again.");
         }
     }
 
+    @Transactional(readOnly = true)
     public boolean hasPendingRegistration(String email) {
-        return Boolean.TRUE.equals(redisTemplate.hasKey(PAYLOAD_PREFIX + normalize(email)));
+        return pendingRepo.findByEmail(email.toLowerCase().trim()).isPresent();
     }
 
-    /**
-     * Enforce a 60-second cooldown between resend requests.
-     * The cooldown key is set (or reset) every time an OTP is sent.
-     * When the key exists in Redis, the cooldown is still active.
-     */
+    @Transactional(readOnly = true)
     public void checkResendCooldown(String email) {
-        String key = COOLDOWN_PREFIX + normalize(email);
-        Long ttl = redisTemplate.getExpire(key, TimeUnit.SECONDS);
-        if (ttl != null && ttl > 0) {
-            throw new BusinessException("OTP_COOLDOWN",
-                    "Please wait " + ttl + " second(s) before requesting a new OTP.");
-        }
+        String normalizedEmail = email.toLowerCase().trim();
+        pendingRepo.findByEmail(normalizedEmail).ifPresent(pending -> {
+            long secondsSinceCreated = ChronoUnit.SECONDS.between(
+                    pending.getCreatedAt(), Instant.now());
+            if (secondsSinceCreated < RESEND_COOLDOWN_SECONDS) {
+                long waitSeconds = RESEND_COOLDOWN_SECONDS - secondsSinceCreated;
+                throw new BusinessException("OTP_COOLDOWN",
+                        "Please wait " + waitSeconds + " second(s) before requesting a new OTP.");
+            }
+        });
     }
 
-    /** Re-register path: refresh payload + OTP, reset cooldown. */
-    public void updatePendingForResend(RegisterRequest request, String newOtp) {
-        storePending(request, newOtp);
-    }
-
-    /** Resend path (user already on OTP screen): refresh OTP only, reset cooldown. */
     public void updateOtpOnly(String email, String newOtp) {
-        String key = normalize(email);
-        if (!Boolean.TRUE.equals(redisTemplate.hasKey(PAYLOAD_PREFIX + key))) {
-            throw new BusinessException("OTP_NOT_FOUND",
-                    "No pending registration found for this email. Please register again.");
-        }
-        redisTemplate.opsForValue().set(CODE_PREFIX + key, newOtp, OTP_TTL_SECONDS, TimeUnit.SECONDS);
-        redisTemplate.opsForValue().set(COOLDOWN_PREFIX + key, "1", COOLDOWN_TTL_SECONDS, TimeUnit.SECONDS);
+        String normalizedEmail = email.toLowerCase().trim();
+        PendingRegistration pending = pendingRepo.findByEmail(normalizedEmail)
+                .orElseThrow(() -> new BusinessException("OTP_NOT_FOUND",
+                        "No pending registration found for this email. Please register again."));
+
+        pending.setOtpCode(newOtp);
+        pending.setExpiresAt(Instant.now().plus(OTP_EXPIRY_MINUTES, ChronoUnit.MINUTES));
+        pending.setCreatedAt(Instant.now());
+        pendingRepo.save(pending);
     }
 
-    private String normalize(String email) {
-        return email.toLowerCase().trim();
+    public void updatePendingForResend(RegisterRequest request, String newOtp) {
+        String normalizedEmail = request.getEmail().toLowerCase().trim();
+        PendingRegistration pending = pendingRepo.findByEmail(normalizedEmail)
+                .orElseThrow(() -> new BusinessException("OTP_NOT_FOUND",
+                        "No pending registration found for this email. Please register again."));
+
+        try {
+            String payloadJson = objectMapper.writeValueAsString(request);
+            pending.setPhone(request.getPhone().trim());
+            pending.setPayloadJson(payloadJson);
+        } catch (Exception e) {
+            throw new BusinessException("OTP_STORE_FAILED",
+                    "Failed to update pending registration. Please try again.");
+        }
+
+        pending.setOtpCode(newOtp);
+        pending.setExpiresAt(Instant.now().plus(OTP_EXPIRY_MINUTES, ChronoUnit.MINUTES));
+        pending.setCreatedAt(Instant.now());
+        pendingRepo.save(pending);
     }
 }
