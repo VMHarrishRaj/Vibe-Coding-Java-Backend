@@ -1,6 +1,7 @@
 package com.truckhire.modules.auth.security;
 
 import com.truckhire.modules.auth.service.JwtService;
+import com.truckhire.modules.auth.service.TokenBlacklistService;
 import com.truckhire.modules.user.entity.User;
 import com.truckhire.modules.user.repository.UserRepository;
 import jakarta.servlet.FilterChain;
@@ -51,6 +52,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserRepository userRepository;
+    private final TokenBlacklistService tokenBlacklistService;
 
     @Override
     protected void doFilterInternal(
@@ -64,17 +66,24 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
             if (token != null && jwtService.validateToken(token)) {
 
-                // ── Step 2: Get user ID and role from token ──
+                // ── Step 2: Check blacklist (logout / password change invalidation) ──
+                String jti = jwtService.getJtiFromToken(token);
+                if (tokenBlacklistService.isBlacklisted(jti)) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+
+                // ── Step 3: Get user ID and role from token ──
                 UUID userId = jwtService.getUserIdFromToken(token);
                 String role = jwtService.getRoleFromToken(token);
 
-                // ── Step 3: Load user from database ──
+                // ── Step 4: Load user from database ──
                 // We verify the user still exists and is active
                 User user = userRepository.findById(userId).orElse(null);
 
                 if (user != null && user.getDeletedAt() == null) {
 
-                    // ── Step 4: Create authentication object ──
+                    // ── Step 5: Create authentication object ──
                     // SimpleGrantedAuthority with "ROLE_" prefix enables:
                     // @PreAuthorize("hasRole('ADMIN')") → checks for ROLE_ADMIN
                     UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
@@ -85,7 +94,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     authentication.setDetails(
                             new WebAuthenticationDetailsSource().buildDetails(request));
 
-                    // ── Step 5: Set in SecurityContext ──
+                    // ── Step 6: Set in SecurityContext ──
                     // After this, the request is "authenticated"
                     // Controllers can access the user via SecurityContextHolder
                     SecurityContextHolder.getContext().setAuthentication(authentication);

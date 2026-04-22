@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.UUID;
 
 /**
  * Auth Service — handles registration (OTP-gated) and login.
@@ -52,6 +53,8 @@ public class AuthService {
     private final OtpService otpService;
     private final EmailSender emailSender;
     private final PasswordResetService passwordResetService;
+    private final TokenBlacklistService tokenBlacklistService;
+    private final RefreshTokenService refreshTokenService;
 
     /**
      * Step 1 of registration: validate uniqueness, generate + send OTP.
@@ -176,10 +179,11 @@ public class AuthService {
         log.info("User registered via OTP: id={}, email={}, role={}",
                 savedUser.getId(), savedUser.getEmail(), role.getName());
 
-        // ── Generate JWT and return ──
-        String token = jwtService.generateAccessToken(
+        String accessToken = jwtService.generateAccessToken(
                 savedUser.getId(), savedUser.getEmail(), role.getName());
-        return buildAuthResponse(savedUser, token);
+        String refreshToken = jwtService.generateRefreshToken(savedUser.getId());
+        refreshTokenService.store(savedUser.getId(), refreshToken);
+        return buildAuthResponse(savedUser, accessToken, refreshToken);
     }
 
     /**
@@ -258,10 +262,12 @@ public class AuthService {
                     "Your account is currently inactive. Please contact support.");
         }
 
-        String token = jwtService.generateAccessToken(user.getId(), user.getEmail(), user.getRole().getName());
+        String accessToken = jwtService.generateAccessToken(user.getId(), user.getEmail(), user.getRole().getName());
+        String refreshToken = jwtService.generateRefreshToken(user.getId());
+        refreshTokenService.store(user.getId(), refreshToken);
         log.info("User logged in: id={}, email={}", user.getId(), user.getEmail());
 
-        return buildAuthResponse(user, token);
+        return buildAuthResponse(user, accessToken, refreshToken);
     }
 
     /**
@@ -318,11 +324,75 @@ public class AuthService {
         log.info("Password reset successful: email={}", email);
     }
 
+    /**
+     * Real logout — invalidates both tokens server-side.
+     *
+     * Blacklists the access token (so it can't be used even before it expires)
+     * and revokes the refresh token from Redis (so it can't be used to mint new tokens).
+     *
+     * The accessToken string is passed in from the controller (extracted from the
+     * Authorization header). The refreshToken comes from the request body.
+     *
+     * After this call, the user must log in again to get new tokens.
+     */
+    public void logout(String accessToken, String refreshToken, UUID userId) {
+        // Blacklist the access token for its remaining lifetime
+        String jti = jwtService.getJtiFromToken(accessToken);
+        long ttl = jwtService.getRemainingTtlSeconds(accessToken);
+        tokenBlacklistService.blacklist(jti, ttl);
+
+        // Revoke the refresh token from Redis
+        try {
+            refreshTokenService.revoke(refreshToken, userId);
+        } catch (Exception e) {
+            // Refresh token may already be expired or invalid — still a successful logout
+            log.warn("Could not revoke refresh token on logout (may already be expired): {}", e.getMessage());
+        }
+
+        log.info("User logged out: userId={}", userId);
+    }
+
+    /**
+     * Refresh the access token using a valid refresh token.
+     *
+     * Validates the refresh token against Redis, then:
+     *   1. Issues a new access token (short-lived)
+     *   2. Rotates the refresh token (old revoked, new issued)
+     *
+     * Token rotation means: each refresh token can only be used once.
+     * If an attacker steals a refresh token and uses it after the real user
+     * already rotated it, the Redis key is gone — they get 401.
+     */
+    public AuthResponse refresh(String refreshToken) {
+        // Validate against Redis — throws INVALID_REFRESH_TOKEN if bad
+        UUID userId = refreshTokenService.validate(refreshToken);
+
+        User user = userRepository.findById(userId)
+                .filter(u -> u.getDeletedAt() == null)
+                .orElseThrow(() -> new BusinessException("INVALID_REFRESH_TOKEN",
+                        "User account not found or deleted."));
+
+        // Guard: suspended users should not silently get new access tokens
+        if (user.getStatus() == UserStatus.SUSPENDED) {
+            refreshTokenService.revokeAll(userId);
+            throw new BusinessException("ACCOUNT_SUSPENDED",
+                    "Your account has been suspended. Please contact support.");
+        }
+
+        String newAccessToken = jwtService.generateAccessToken(
+                userId, user.getEmail(), user.getRole().getName());
+        String newRefreshToken = refreshTokenService.rotate(refreshToken, userId);
+
+        log.info("Token refreshed: userId={}", userId);
+        return buildAuthResponse(user, newAccessToken, newRefreshToken);
+    }
+
     // ── Private helpers ──
 
-    private AuthResponse buildAuthResponse(User user, String token) {
+    private AuthResponse buildAuthResponse(User user, String accessToken, String refreshToken) {
         return AuthResponse.builder()
-                .accessToken(token)
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
                 .tokenType("Bearer")
                 .expiresIn(jwtService.getAccessTokenExpirationSeconds())
                 .user(AuthResponse.UserInfo.builder()

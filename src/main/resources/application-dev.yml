@@ -12,12 +12,6 @@
 # ═══════════════════════════════════════════════════
 
 spring:
-  # ── Disable Redis auto-config in dev ──
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
-
   # ── PostgreSQL Connection ──
   # Set DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD in .env before running.
   datasource:

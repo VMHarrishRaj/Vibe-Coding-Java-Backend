@@ -10,6 +10,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.UUID;
+import java.time.Instant;
 
 /**
  * JWT Token Service — creates and validates JSON Web Tokens.
@@ -43,19 +44,16 @@ public class JwtService {
 
     private final SecretKey signingKey;
     private final long accessTokenExpirationMs;
+    private final long refreshTokenExpirationMs;
 
-    /**
-     * Constructor injection.
-     * 
-     * @Value reads from application.yml → app.jwt.secret, etc.
-     */
     public JwtService(
             @Value("${app.jwt.secret}") String secret,
-            @Value("${app.jwt.access-token-expiration-ms}") long accessTokenExpirationMs) {
+            @Value("${app.jwt.access-token-expiration-ms}") long accessTokenExpirationMs,
+            @Value("${app.jwt.refresh-token-expiration-ms}") long refreshTokenExpirationMs) {
 
-        // Create HMAC-SHA key from the secret string
         this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.accessTokenExpirationMs = accessTokenExpirationMs;
+        this.refreshTokenExpirationMs = refreshTokenExpirationMs;
     }
 
     /**
@@ -71,13 +69,34 @@ public class JwtService {
         Date expiry = new Date(now.getTime() + accessTokenExpirationMs);
 
         return Jwts.builder()
-                .subject(userId.toString()) // who this token is for
-                .claim("email", email) // custom claim
-                .claim("role", roleName) // custom claim (used by JwtAuthFilter)
-                .issuedAt(now) // when the token was created
-                .expiration(expiry) // when the token expires
-                .signWith(signingKey) // sign with HMAC-SHA256
-                .compact(); // serialize to string
+                .id(UUID.randomUUID().toString())   // jti — unique per token, used for blacklisting
+                .subject(userId.toString())
+                .claim("email", email)
+                .claim("role", roleName)
+                .claim("type", "ACCESS")
+                .issuedAt(now)
+                .expiration(expiry)
+                .signWith(signingKey)
+                .compact();
+    }
+
+    /**
+     * Generate a long-lived refresh token.
+     * Only contains userId + type — no role or email (not needed for refresh).
+     * The jti is stored in Redis so it can be individually revoked.
+     */
+    public String generateRefreshToken(UUID userId) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + refreshTokenExpirationMs);
+
+        return Jwts.builder()
+                .id(UUID.randomUUID().toString())
+                .subject(userId.toString())
+                .claim("type", "REFRESH")
+                .issuedAt(now)
+                .expiration(expiry)
+                .signWith(signingKey)
+                .compact();
     }
 
     /**
@@ -121,11 +140,31 @@ public class JwtService {
         return false;
     }
 
-    /**
-     * Get the access token expiration in seconds (for the API response).
-     */
     public long getAccessTokenExpirationSeconds() {
         return accessTokenExpirationMs / 1000;
+    }
+
+    public long getRefreshTokenExpirationSeconds() {
+        return refreshTokenExpirationMs / 1000;
+    }
+
+    /**
+     * Extract the JWT ID (jti) from a token — used as the Redis blacklist key.
+     */
+    public String getJtiFromToken(String token) {
+        return parseClaims(token).getId();
+    }
+
+    /**
+     * How many seconds until this token expires.
+     * Used to set the exact Redis TTL when blacklisting — so the blacklist entry
+     * auto-expires at the same time the token would have expired anyway.
+     * Returns 0 if the token is already expired.
+     */
+    public long getRemainingTtlSeconds(String token) {
+        Date expiry = parseClaims(token).getExpiration();
+        long remaining = (expiry.getTime() - Instant.now().toEpochMilli()) / 1000;
+        return Math.max(0, remaining);
     }
 
     // ── Private helper ──

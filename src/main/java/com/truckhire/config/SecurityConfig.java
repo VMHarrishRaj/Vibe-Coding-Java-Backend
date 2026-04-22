@@ -76,7 +76,7 @@ public class SecurityConfig {
                     // Allow preflight CORS requests
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                    // Public APIs
+                    // Public APIs — /auth/** covers login, register, OTP, refresh, forgot-password
                     .requestMatchers("/auth/**").permitAll()
                     .requestMatchers("/health").permitAll()
                     .requestMatchers("/actuator/health").permitAll()

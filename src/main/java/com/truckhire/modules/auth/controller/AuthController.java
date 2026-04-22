@@ -1,16 +1,21 @@
 package com.truckhire.modules.auth.controller;
 
 import com.truckhire.common.dto.ApiResponse;
+import com.truckhire.common.util.SecurityUtils;
 import com.truckhire.modules.auth.dto.*;
 import com.truckhire.modules.auth.service.AuthService;
+import com.truckhire.modules.user.entity.User;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.util.StringUtils;
 
 /**
  * Auth Controller — registration (OTP-gated), login, and logout.
@@ -144,11 +149,46 @@ public class AuthController {
     /**
      * POST /api/v1/auth/logout
      *
-     * Client-side logout stub — client must discard the JWT token.
-     * Server-side token invalidation (Redis blacklist) is planned for Phase 10.
+     * Real server-side logout — blacklists the access token and revokes the refresh token.
+     * Client must send the Authorization header (access token) + { refreshToken } in the body.
+     * After this call, both tokens are dead on the server regardless of their expiry.
      */
     @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<Void>> logout() {
+    public ResponseEntity<ApiResponse<Void>> logout(
+            @Valid @RequestBody LogoutRequest request,
+            @AuthenticationPrincipal User user,
+            HttpServletRequest httpRequest) {
+
+        String bearerToken = httpRequest.getHeader("Authorization");
+        String accessToken = (StringUtils.hasText(bearerToken) && bearerToken.startsWith("Bearer "))
+                ? bearerToken.substring(7) : null;
+
+        if (accessToken != null && user != null) {
+            authService.logout(accessToken, request.getRefreshToken(), user.getId());
+        }
+
         return ResponseEntity.ok(ApiResponse.success("Logged out successfully", null));
+    }
+
+    /**
+     * POST /api/v1/auth/refresh
+     *
+     * Silently renew the access token using a valid refresh token.
+     * No Authorization header needed — only the refresh token in the body.
+     * Returns a new access token + rotated refresh token.
+     *
+     * The old refresh token is immediately revoked after this call (token rotation).
+     * Frontend must always use the latest refresh token returned by this endpoint.
+     *
+     * Error codes:
+     *   INVALID_REFRESH_TOKEN — expired, revoked, or invalid token
+     *   ACCOUNT_SUSPENDED     — account suspended since last login
+     */
+    @PostMapping("/refresh")
+    public ResponseEntity<ApiResponse<AuthResponse>> refresh(
+            @Valid @RequestBody RefreshRequest request) {
+
+        AuthResponse response = authService.refresh(request.getRefreshToken());
+        return ResponseEntity.ok(ApiResponse.success("Token refreshed", response));
     }
 }
