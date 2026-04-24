@@ -14,6 +14,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -177,5 +179,22 @@ public class PaymentController {
             @RequestParam String accountId) {
         StripeConnectResponse response = paymentService.initiateStripeConnect(ownerId);
         return ResponseEntity.ok(ApiResponse.success("New Stripe onboarding link generated", response));
+    }
+
+    /**
+     * GET /payments/{id}/download
+     * Download invoice PDF for a specific CHARGE transaction.
+     * RENTER: can download invoices for their own bookings.
+     * OWNER: can download invoices for bookings on their trucks.
+     */
+    @GetMapping("/payments/{id}/download")
+    @PreAuthorize("hasAnyRole('RENTER', 'OWNER')")
+    public ResponseEntity<byte[]> downloadInvoicePdf(@PathVariable UUID id) {
+        UUID userId = SecurityUtils.getCurrentUser().getId();
+        byte[] pdf = paymentService.generateInvoicePdfForUser(id, userId);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.setContentDispositionFormData("attachment", "invoice-" + id + ".pdf");
+        return ResponseEntity.ok().headers(headers).body(pdf);
     }
 }

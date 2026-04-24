@@ -889,6 +889,8 @@ public class TruckService {
                 .mileageTotal(truck.getMileageTotal())
                 .year(truck.getYear())
                 .vinNumber(truck.getVinNumber())
+                .color(truck.getColor())
+                .fuelType(truck.getFuelType() != null ? truck.getFuelType().name() : null)
                 .status(truck.getStatus().name())
                 .rejectionReason(truck.getRejectionReason())
                 .description(truck.getDescription())

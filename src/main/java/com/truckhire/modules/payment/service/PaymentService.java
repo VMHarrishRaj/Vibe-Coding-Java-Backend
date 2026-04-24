@@ -1468,6 +1468,30 @@ public class PaymentService {
         }
     }
 
+    /**
+     * Generates a PDF invoice for a CHARGE transaction belonging to the requesting user.
+     * RENTER may download invoices for bookings they made.
+     * OWNER may download invoices for bookings on their trucks.
+     * Used by GET /payments/{id}/download.
+     */
+    @Transactional(readOnly = true)
+    public byte[] generateInvoicePdfForUser(UUID transactionId, UUID userId) {
+        PaymentTransaction txn = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new com.truckhire.common.exception.ResourceNotFoundException(
+                        "PaymentTransaction", "id", transactionId));
+
+        com.truckhire.modules.booking.entity.Booking booking = txn.getBooking();
+        boolean isRenter = booking.getRenter().getId().equals(userId);
+        boolean isOwner  = booking.getOwner().getId().equals(userId);
+
+        if (!isRenter && !isOwner) {
+            throw new com.truckhire.common.exception.BusinessException(
+                    "ACCESS_DENIED", "You do not have access to this invoice.");
+        }
+
+        return generateInvoicePdf(transactionId);
+    }
+
     private String nullSafe(Object val) {
         return val != null ? val.toString() : "—";
     }
