@@ -19,6 +19,10 @@ public interface TruckDocumentRepository extends JpaRepository<TruckDocument, UU
     @Query("SELECT d FROM TruckDocument d WHERE d.truck.id = :truckId AND d.documentType.name = 'PHOTO' ORDER BY d.uploadedAt ASC")
     List<TruckDocument> findAllPhotosByTruckId(@Param("truckId") UUID truckId);
 
+    // Returns all legal documents (RC, INSURANCE, PERMIT) for a truck — excludes photos.
+    @Query("SELECT d FROM TruckDocument d WHERE d.truck.id = :truckId AND d.documentType.name IN ('RC', 'INSURANCE', 'PERMIT') ORDER BY d.uploadedAt ASC")
+    List<TruckDocument> findLegalDocsByTruckId(@Param("truckId") UUID truckId);
+
     // Returns the first PHOTO document for each truck in the given id set.
     // Result: list of [truckId, filePath] pairs — one per truck at most.
     @Query("SELECT d.truck.id, d.filePath FROM TruckDocument d " +
