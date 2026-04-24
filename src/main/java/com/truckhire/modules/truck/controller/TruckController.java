@@ -26,17 +26,19 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Truck Controller — truck CRUD and photo upload endpoints.
+ * Truck Controller — truck CRUD, photo and document upload endpoints.
  *
  * ENDPOINTS:
- * POST /trucks → Add truck (Owner, KYC-verified)
- * PUT /trucks/{id} → Update truck (Owner)
- * DELETE /trucks/{id} → Soft-delete truck (Owner)
- * GET /trucks → Search/browse trucks (Any - returns only APPROVED)
- * GET /trucks/{id} → Truck detail (Any)
- * GET /trucks/mine → My trucks (Owner)
- * POST /trucks/{id}/photos → Upload truck photo (Owner)
- * GET /trucks/{id}/documents → List truck documents (Any)
+ * POST   /trucks                    → Add truck (Owner)
+ * PUT    /trucks/{id}               → Update truck (Owner)
+ * DELETE /trucks/{id}               → Soft-delete truck (Owner)
+ * GET    /trucks                    → Search/browse trucks (public)
+ * GET    /trucks/{id}               → Truck detail (public)
+ * GET    /trucks/mine               → My trucks (Owner)
+ * POST   /trucks/{id}/photos        → Upload truck photo (Owner) — documentType defaults to PHOTO
+ * GET    /trucks/{id}/photos        → List truck photos only (public)
+ * POST   /trucks/{id}/documents     → Upload legal document — RC, INSURANCE, PERMIT (Owner)
+ * GET    /trucks/{id}/documents     → List legal documents only — RC, INSURANCE, PERMIT (public)
  */
 @RestController
 @RequestMapping("/trucks")
@@ -180,10 +182,8 @@ public class TruckController {
 
     /**
      * POST /api/v1/trucks/{id}/photos
-     * Upload truck photo/document. Multipart form-data.
-     *
-     * If truck is currently APPROVED, uploading new photos reverts
-     * status to PENDING_APPROVAL for admin re-review.
+     * Upload a truck photo. documentType defaults to PHOTO.
+     * If truck is currently APPROVED, reverts status to PENDING_APPROVAL for admin re-review.
      */
     @PostMapping("/{id}/photos")
     @PreAuthorize("hasRole('OWNER')")
@@ -200,8 +200,40 @@ public class TruckController {
     }
 
     /**
+     * GET /api/v1/trucks/{id}/photos
+     * List truck photos only. Public — no auth required.
+     */
+    @GetMapping("/{id}/photos")
+    public ResponseEntity<ApiResponse<List<TruckDocumentResponse>>> getTruckPhotos(
+            @PathVariable UUID id) {
+
+        List<TruckDocumentResponse> photos = truckService.getTruckPhotos(id);
+        return ResponseEntity.ok(ApiResponse.success("Truck photos retrieved", photos));
+    }
+
+    /**
+     * POST /api/v1/trucks/{id}/documents
+     * Upload a legal document (RC, INSURANCE, PERMIT). documentType param required.
+     * If truck is currently APPROVED, reverts status to PENDING_APPROVAL for admin re-review.
+     */
+    @PostMapping("/{id}/documents")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<ApiResponse<TruckDocumentResponse>> uploadTruckDocument(
+            @PathVariable UUID id,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("documentType") String documentType) {
+
+        User owner = SecurityUtils.getCurrentUser();
+        TruckDocumentResponse response = truckService.uploadTruckPhoto(
+                owner.getId(), id, documentType, file);
+
+        return ResponseEntity.ok(ApiResponse.success("Truck document uploaded", response));
+    }
+
+    /**
      * GET /api/v1/trucks/{id}/documents
-     * List truck documents/photos.
+     * List truck legal documents only (RC, INSURANCE, PERMIT) — excludes photos.
+     * Public — no auth required.
      */
     @GetMapping("/{id}/documents")
     public ResponseEntity<ApiResponse<List<TruckDocumentResponse>>> getTruckDocuments(

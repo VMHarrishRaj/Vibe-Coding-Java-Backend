@@ -73,16 +73,16 @@ public class EnumController {
 
     @GetMapping("/enums")
     public ApiResponse<Map<String, List<String>>> getEnums() {
-        Map<String, List<String>> enums = Map.of(
-                "vehicleTypes",    List.of("MINI", "STANDARD", "HEAVY"),
-                "truckStatuses",   List.of("Available", "Rented", "Not Available"),
-                "userStatuses",    List.of("Active", "Inactive", "Waiting for Approval", "Rejected"),
-                "userRoles",       List.of("OWNER", "RENTER"),
-                "bookingStatuses", List.of("ONGOING", "UPCOMING", "COMPLETED", "REJECTED", "CANCELLED"),
-                "kycDocumentTypes",List.of("DRIVER_LICENSE", "PASSPORT", "STATE_ID"),
-                "truckSortOptions",List.of("price_asc", "price_desc", "newest"),
-                "bankAccountTypes",List.of("CHECKING", "SAVINGS")
-        );
+        Map<String, List<String>> enums = new java.util.LinkedHashMap<>();
+        enums.put("vehicleTypes",         List.of("MINI", "STANDARD", "HEAVY"));
+        enums.put("truckStatuses",        List.of("Available", "Rented", "Not Available"));
+        enums.put("userStatuses",         List.of("Active", "Inactive", "Waiting for Approval", "Rejected"));
+        enums.put("userRoles",            List.of("OWNER", "RENTER"));
+        enums.put("bookingStatuses",      List.of("ONGOING", "UPCOMING", "COMPLETED", "REJECTED", "CANCELLED"));
+        enums.put("kycDocumentTypes",     List.of("DRIVER_LICENSE", "PASSPORT", "STATE_ID"));
+        enums.put("vehicleDocumentTypes", List.of("RC", "INSURANCE", "PERMIT"));
+        enums.put("truckSortOptions",     List.of("price_asc", "price_desc", "newest"));
+        enums.put("bankAccountTypes",     List.of("CHECKING", "SAVINGS"));
 
         return ApiResponse.success("Enum values retrieved", enums);
     }

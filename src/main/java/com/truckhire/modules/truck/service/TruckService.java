@@ -681,15 +681,28 @@ public class TruckService {
     }
 
     /**
-     * Get truck documents/photos.
+     * Get truck legal documents (RC, INSURANCE, PERMIT) — excludes photos.
      */
     @Transactional(readOnly = true)
     public List<TruckDocumentResponse> getTruckDocuments(UUID truckId) {
-        // Verify truck exists
         truckRepository.findByIdAndDeletedAtIsNull(truckId)
                 .orElseThrow(() -> new ResourceNotFoundException("Truck", "id", truckId));
 
-        return truckDocumentRepository.findByTruckId(truckId)
+        return truckDocumentRepository.findLegalDocsByTruckId(truckId)
+                .stream()
+                .map(this::mapToDocumentResponse)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Get truck photos only.
+     */
+    @Transactional(readOnly = true)
+    public List<TruckDocumentResponse> getTruckPhotos(UUID truckId) {
+        truckRepository.findByIdAndDeletedAtIsNull(truckId)
+                .orElseThrow(() -> new ResourceNotFoundException("Truck", "id", truckId));
+
+        return truckDocumentRepository.findAllPhotosByTruckId(truckId)
                 .stream()
                 .map(this::mapToDocumentResponse)
                 .collect(Collectors.toList());
