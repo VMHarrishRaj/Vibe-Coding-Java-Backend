@@ -24,11 +24,13 @@ public class CreateBookingRequest {
     private UUID truckId;
 
     @NotBlank(message = "Start date is required")
-    @Pattern(regexp = "\\d{4}-\\d{2}-\\d{2}", message = "Start date must be in YYYY-MM-DD format")
+    @Pattern(regexp = "\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2})?)?",
+             message = "Start date must be YYYY-MM-DD or YYYY-MM-DDTHH:mm format")
     private String startDate;
 
     @NotBlank(message = "End date is required")
-    @Pattern(regexp = "\\d{4}-\\d{2}-\\d{2}", message = "End date must be in YYYY-MM-DD format")
+    @Pattern(regexp = "\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2})?)?",
+             message = "End date must be YYYY-MM-DD or YYYY-MM-DDTHH:mm format")
     private String endDate;
 
     private String pickupLocation;

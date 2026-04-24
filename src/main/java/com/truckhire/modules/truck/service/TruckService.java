@@ -31,6 +31,7 @@ import org.springframework.data.domain.Sort;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -470,7 +471,8 @@ public class TruckService {
         if (availableFrom != null) {
             page = truckRepository.searchPublicTrucksWithDates(
                     cityLower, vehicleTypeNorm, minPrice, maxPrice, minCapacity,
-                    insured, availableFrom, availableTo, sortedPageable);
+                    insured, availableFrom.atStartOfDay(), availableTo.atStartOfDay(),
+                    availableFrom, availableTo, sortedPageable);
         } else {
             page = truckRepository.searchPublicTrucks(
                     cityLower, vehicleTypeNorm, minPrice, maxPrice, minCapacity,
@@ -567,8 +569,8 @@ public class TruckService {
         // Build set of all booked dates in the requested month
         java.util.Set<LocalDate> bookedDates = new java.util.HashSet<>();
         for (Booking b : bookings) {
-            LocalDate start = b.getStartDate().isBefore(firstDay) ? firstDay : b.getStartDate();
-            LocalDate end = b.getEndDate().isAfter(lastDay) ? lastDay : b.getEndDate();
+            LocalDate start = b.getStartDate().toLocalDate().isBefore(firstDay) ? firstDay : b.getStartDate().toLocalDate();
+            LocalDate end = b.getEndDate().toLocalDate().isAfter(lastDay) ? lastDay : b.getEndDate().toLocalDate();
             for (LocalDate d = start; !d.isAfter(end); d = d.plusDays(1)) {
                 bookedDates.add(d);
             }
@@ -608,7 +610,7 @@ public class TruckService {
             throw new BusinessException("PAST_DATE", "Cannot modify availability for past dates");
         }
 
-        boolean hasBooking = bookingRepository.existsConflictingBooking(truckId, date, date);
+        boolean hasBooking = bookingRepository.existsConflictingBooking(truckId, date.atStartOfDay(), date.atStartOfDay());
         if (hasBooking) {
             throw new BusinessException("DATE_HAS_BOOKING",
                     "This date has an active booking and cannot be blocked or unblocked");
@@ -645,7 +647,7 @@ public class TruckService {
             throw new BusinessException("INVALID_DATE_RANGE", "startDate cannot be in the past");
         }
 
-        boolean hasConflict = bookingRepository.existsConflictingBooking(truckId, startDate, endDate)
+        boolean hasConflict = bookingRepository.existsConflictingBooking(truckId, startDate.atStartOfDay(), endDate.atStartOfDay())
                 || blockedDateRepository.existsBlockedDateInRange(truckId, startDate, endDate);
 
         if (!hasConflict) {
@@ -661,7 +663,7 @@ public class TruckService {
         TruckAvailabilityResponse.ConflictingRange conflictRange = bookingRepository
                 .findUpcomingBookingsByTruckId(truckId)
                 .stream()
-                .filter(b -> !b.getStartDate().isAfter(endDate) && !b.getEndDate().isBefore(startDate))
+                .filter(b -> !b.getStartDate().toLocalDate().isAfter(endDate) && !b.getEndDate().toLocalDate().isBefore(startDate))
                 .findFirst()
                 .map(b -> TruckAvailabilityResponse.ConflictingRange.builder()
                         .startDate(b.getStartDate().toString())

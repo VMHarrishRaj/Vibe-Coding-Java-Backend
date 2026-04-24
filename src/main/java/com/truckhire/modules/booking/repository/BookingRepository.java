@@ -10,7 +10,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,8 +34,8 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             """)
     boolean existsConflictingBooking(
             @Param("truckId") UUID truckId,
-            @Param("startDate") LocalDate startDate,
-            @Param("endDate") LocalDate endDate);
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
 
     /**
      * Conflict check excluding a specific booking (for future reschedule support).
@@ -50,8 +50,8 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             """)
     boolean existsConflictingBookingExcluding(
             @Param("truckId") UUID truckId,
-            @Param("startDate") LocalDate startDate,
-            @Param("endDate") LocalDate endDate,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
             @Param("excludeBookingId") UUID excludeBookingId);
 
     /**

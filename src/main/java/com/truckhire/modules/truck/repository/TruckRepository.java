@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -113,7 +114,7 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
               )
               AND t.id NOT IN (
                   SELECT tbd.truck.id FROM TruckBlockedDate tbd
-                  WHERE tbd.blockedDate BETWEEN :availableFrom AND :availableTo
+                  WHERE tbd.blockedDate BETWEEN :availableFromDate AND :availableToDate
               )
             """)
     Page<Truck> searchPublicTrucksWithDates(
@@ -123,8 +124,10 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
             @Param("maxPrice") BigDecimal maxPrice,
             @Param("minCapacity") Integer minCapacity,
             @Param("insured") Boolean insured,
-            @Param("availableFrom") LocalDate availableFrom,
-            @Param("availableTo") LocalDate availableTo,
+            @Param("availableFrom") LocalDateTime availableFrom,
+            @Param("availableTo") LocalDateTime availableTo,
+            @Param("availableFromDate") LocalDate availableFromDate,
+            @Param("availableToDate") LocalDate availableToDate,
             Pageable pageable);
 
     // ── Owner dashboard counts (M7) ──
