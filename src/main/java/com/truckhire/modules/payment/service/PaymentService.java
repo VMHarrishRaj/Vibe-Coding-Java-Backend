@@ -1385,7 +1385,7 @@ public class PaymentService {
             com.lowagie.text.Font smallFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 9);
 
             // ── Header ──
-            doc.add(new com.lowagie.text.Paragraph("TruckHire — Invoice", titleFont));
+            doc.add(new com.lowagie.text.Paragraph("TruckRental — Invoice", titleFont));
             doc.add(new com.lowagie.text.Paragraph("Invoice #: " + detail.getInvoiceNumber(), headerFont));
             doc.add(new com.lowagie.text.Paragraph("Booking #: " + detail.getBookingNumber(), normalFont));
             doc.add(new com.lowagie.text.Paragraph("Payment Date: " + nullSafe(detail.getPaymentDate()), normalFont));
