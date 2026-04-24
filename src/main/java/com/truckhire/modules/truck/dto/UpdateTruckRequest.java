@@ -56,6 +56,7 @@ public class UpdateTruckRequest {
     private Integer year;
     private String color;
     private FuelType fuelType;
+    private String transmission;
 
     @Size(max = 17, message = "VIN number must not exceed 17 characters")
     private String vinNumber;

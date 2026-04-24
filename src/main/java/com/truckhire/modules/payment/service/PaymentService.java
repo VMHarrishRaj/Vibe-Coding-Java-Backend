@@ -1302,6 +1302,7 @@ public class PaymentService {
         if (txn.getType() == PaymentType.PAYOUT) {
             builder.startDate(booking.getStartDate() != null ? booking.getStartDate().toLocalDate().toString() : null)
                    .endDate(booking.getEndDate() != null ? booking.getEndDate().toLocalDate().toString() : null)
+                   .renterName(booking.getRenter() != null ? booking.getRenter().getFullname() : null)
                    .failureReason(txn.getFailureReason());
 
             // grossAmount — use booking.totalAmount if set (includes mileage + day rate),

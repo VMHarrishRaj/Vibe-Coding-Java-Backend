@@ -21,6 +21,7 @@ public class BookingListResponse {
     private String renterName;
     private String truckModel;      // "{make} {model}"
     private String truckId;
+    private String truckCoverPhotoUrl;
     private String startDate;       // YYYY-MM-DD
     private String endDate;         // YYYY-MM-DD
     private Integer totalDays;

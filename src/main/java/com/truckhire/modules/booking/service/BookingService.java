@@ -706,6 +706,7 @@ public class BookingService {
                         .color(truck.getColor())
                         .fuelType(truck.getFuelType() != null ? truck.getFuelType().name() : null)
                         .vinNumber(truck.getVinNumber())
+                        .transmission(truck.getTransmission())
                         .build())
                 .startDate(booking.getStartDate().toString())
                 .endDate(booking.getEndDate().toString())
@@ -745,7 +746,7 @@ public class BookingService {
                 .build();
     }
 
-    private BookingListResponse mapToListResponse(Booking booking) {
+    private BookingListResponse mapToListResponse(Booking booking, Map<UUID, String> coverPhotoUrls) {
         Truck truck = booking.getTruck();
         return BookingListResponse.builder()
                 .id(booking.getId().toString())
@@ -753,6 +754,7 @@ public class BookingService {
                 .renterName(booking.getRenter().getFullname())
                 .truckModel(truck.getMake() + " " + truck.getModel())
                 .truckId(truck.getId().toString())
+                .truckCoverPhotoUrl(coverPhotoUrls.get(truck.getId()))
                 .startDate(booking.getStartDate().format(DATE_ONLY))
                 .endDate(booking.getEndDate().format(DATE_ONLY))
                 .totalDays(booking.getTotalDays())
@@ -783,9 +785,20 @@ public class BookingService {
     }
 
     private PagedResponse<BookingListResponse> buildListPagedResponse(Page<Booking> page) {
+        List<UUID> truckIds = page.getContent().stream()
+                .map(b -> b.getTruck().getId())
+                .distinct()
+                .toList();
+        Map<UUID, String> coverPhotoUrls = truckIds.isEmpty()
+                ? Map.of()
+                : truckDocumentRepository.findFirstPhotoPerTruck(truckIds).stream()
+                        .collect(Collectors.toMap(
+                                row -> (UUID) row[0],
+                                row -> baseUrl + "/api/v1/files/" + row[1],
+                                (a, b) -> a));
         return PagedResponse.<BookingListResponse>builder()
                 .content(page.getContent().stream()
-                        .map(this::mapToListResponse)
+                        .map(b -> mapToListResponse(b, coverPhotoUrls))
                         .collect(Collectors.toList()))
                 .pageNumber(page.getNumber())
                 .pageSize(page.getSize())

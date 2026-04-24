@@ -120,6 +120,7 @@ public class TruckService {
                 .color(request.getColor())
                 .fuelType(request.getFuelType())
                 .vinNumber(request.getVinNumber())
+                .transmission(request.getTransmission())
                 .status(TruckStatus.PENDING_APPROVAL)
                 .build();
 
@@ -212,6 +213,8 @@ public class TruckService {
             truck.setFuelType(request.getFuelType());
         if (request.getVinNumber() != null)
             truck.setVinNumber(request.getVinNumber());
+        if (request.getTransmission() != null)
+            truck.setTransmission(request.getTransmission());
 
         // Pickup locations: null = no change; empty list = remove all; non-empty = replace all
         if (request.getPickupLocations() != null) {
@@ -891,6 +894,7 @@ public class TruckService {
                 .vinNumber(truck.getVinNumber())
                 .color(truck.getColor())
                 .fuelType(truck.getFuelType() != null ? truck.getFuelType().name() : null)
+                .transmission(truck.getTransmission())
                 .status(truck.getStatus().name())
                 .rejectionReason(truck.getRejectionReason())
                 .description(truck.getDescription())

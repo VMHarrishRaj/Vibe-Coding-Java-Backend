@@ -52,6 +52,7 @@ public class TruckResponse {
     private String vinNumber;
     private String color;
     private String fuelType;
+    private String transmission;
 
     // ── Status ──
     private String status; // "PENDING_APPROVAL", "APPROVED", "REJECTED", "INACTIVE"

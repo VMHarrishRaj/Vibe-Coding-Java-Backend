@@ -16,7 +16,7 @@ import java.math.BigDecimal;
  * The `type` field distinguishes CHARGE / REFUND / PAYOUT so the frontend
  * can render the appropriate badge/label without branching on role.
  *
- * Owner-only fields (null for RENTER): truckId, startDate, endDate,
+ * Owner-only fields (null for RENTER): truckId, renterName, startDate, endDate,
  * grossAmount, platformFeePercent, failureReason.
  */
 @Data
@@ -31,6 +31,7 @@ public class MyPaymentHistoryResponse {
     private String invoiceNumber;   // INV001, INV002... — from the paired CHARGE transaction (OWNER), or own invoice (RENTER)
     private String truckId;         // truck UUID — for mobile deep-link; null for RENTER
     private String truckModel;      // e.g. "Tata 407" — null if truck deleted
+    private String renterName;      // renter full name (OWNER only)
     private String startDate;       // booking start date (OWNER only)
     private String endDate;         // booking end date (OWNER only)
     private BigDecimal grossAmount; // what renter paid before fee deduction (OWNER only)
