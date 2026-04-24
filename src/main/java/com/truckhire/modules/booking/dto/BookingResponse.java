@@ -33,9 +33,12 @@ public class BookingResponse {
     // Truck info
     private TruckInfo truck;
 
-    // Dates
+    // Dates — full ISO-8601 datetime (e.g. "2026-05-10T00:00" or "2026-05-10T14:00")
     private String startDate;
     private String endDate;
+    // Date-only strings for UI display (e.g. "2026-05-10") — stable across time-of-day changes
+    private String startDateFormatted;
+    private String endDateFormatted;
     private Integer totalDays;
 
     // Odometer (null until owner records them)

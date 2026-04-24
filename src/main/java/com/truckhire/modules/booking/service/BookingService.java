@@ -36,6 +36,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
@@ -57,6 +60,8 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class BookingService {
+
+    private static final DateTimeFormatter DATE_ONLY = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     @Value("${app.base-url}")
     private String baseUrl;
@@ -126,10 +131,10 @@ public class BookingService {
                     "You cannot book your own truck");
         }
 
-        LocalDate startDate = LocalDate.parse(request.getStartDate());
-        LocalDate endDate = LocalDate.parse(request.getEndDate());
+        LocalDateTime startDate = parseDateInput(request.getStartDate());
+        LocalDateTime endDate = parseDateInput(request.getEndDate());
 
-        if (!startDate.isAfter(LocalDate.now())) {
+        if (!startDate.toLocalDate().isAfter(LocalDate.now())) {
             throw new BusinessException("INVALID_DATE_RANGE",
                     "Start date must be at least tomorrow");
         }
@@ -138,14 +143,14 @@ public class BookingService {
                     "End date must be after start date");
         }
 
-        // Exclusive end: 10th–14th = 4 rental days
-        int totalDays = (int) ChronoUnit.DAYS.between(startDate, endDate);
+        // Day-based pricing: exclusive end (10th–14th = 4 rental days), rounded up
+        int totalDays = (int) ChronoUnit.DAYS.between(startDate.toLocalDate(), endDate.toLocalDate());
 
         if (bookingRepository.existsConflictingBooking(truck.getId(), startDate, endDate)) {
             throw new BusinessException("TRUCK_NOT_AVAILABLE",
                     "This truck is already booked for the selected dates");
         }
-        if (blockedDateRepository.existsBlockedDateInRange(truck.getId(), startDate, endDate)) {
+        if (blockedDateRepository.existsBlockedDateInRange(truck.getId(), startDate.toLocalDate(), endDate.toLocalDate())) {
             throw new BusinessException("TRUCK_NOT_AVAILABLE",
                     "The owner has blocked one or more dates in the selected range");
         }
@@ -704,6 +709,8 @@ public class BookingService {
                         .build())
                 .startDate(booking.getStartDate().toString())
                 .endDate(booking.getEndDate().toString())
+                .startDateFormatted(booking.getStartDate().format(DATE_ONLY))
+                .endDateFormatted(booking.getEndDate().format(DATE_ONLY))
                 .totalDays(booking.getTotalDays())
                 .odometerStart(booking.getOdometerStart())
                 .odometerEnd(booking.getOdometerEnd())
@@ -719,7 +726,7 @@ public class BookingService {
                 .additionalServicesCost(booking.getAdditionalServicesCost())
                 .tax(booking.getTax())
                 .isOverdue(booking.getStatus() == BookingStatus.ACTIVE
-                        && booking.getEndDate().isBefore(java.time.LocalDate.now()))
+                        && booking.getEndDate().toLocalDate().isBefore(LocalDate.now()))
                 .handedOffAt(booking.getHandedOffAt() != null ? booking.getHandedOffAt().toString() : null)
                 .returnedAt(booking.getReturnedAt() != null ? booking.getReturnedAt().toString() : null)
                 .cancelledAt(booking.getCancelledAt() != null ? booking.getCancelledAt().toString() : null)
@@ -746,8 +753,8 @@ public class BookingService {
                 .renterName(booking.getRenter().getFullname())
                 .truckModel(truck.getMake() + " " + truck.getModel())
                 .truckId(truck.getId().toString())
-                .startDate(booking.getStartDate().toString())
-                .endDate(booking.getEndDate().toString())
+                .startDate(booking.getStartDate().format(DATE_ONLY))
+                .endDate(booking.getEndDate().format(DATE_ONLY))
                 .totalDays(booking.getTotalDays())
                 .dayAmount(booking.getDayAmount())
                 .totalAmount(booking.getTotalAmount())
@@ -755,7 +762,7 @@ public class BookingService {
                 .displayStatus(toDisplayStatus(booking.getStatus(), booking.getEndDate()))
                 .createdAt(booking.getCreatedAt() != null ? booking.getCreatedAt().toString() : null)
                 .isOverdue(booking.getStatus() == BookingStatus.ACTIVE
-                        && booking.getEndDate().isBefore(java.time.LocalDate.now()))
+                        && booking.getEndDate().toLocalDate().isBefore(LocalDate.now()))
                 .build();
     }
 
@@ -765,9 +772,9 @@ public class BookingService {
      * Overdue  = actively rented but end date has passed (still ACTIVE in DB)
      * Upcoming = payment captured or confirmed, not yet started
      */
-    private String toDisplayStatus(BookingStatus status, LocalDate endDate) {
+    private String toDisplayStatus(BookingStatus status, LocalDateTime endDate) {
         return switch (status) {
-            case ACTIVE -> endDate != null && endDate.isBefore(LocalDate.now()) ? "Overdue" : "Ongoing";
+            case ACTIVE -> endDate != null && endDate.toLocalDate().isBefore(LocalDate.now()) ? "Overdue" : "Ongoing";
             case PENDING, AWAITING_APPROVAL, CONFIRMED -> "Upcoming";
             case COMPLETED -> "Completed";
             case REJECTED -> "Rejected";
@@ -786,5 +793,23 @@ public class BookingService {
                 .totalPages(page.getTotalPages())
                 .last(page.isLast())
                 .build();
+    }
+
+    // Accepts "YYYY-MM-DD" (legacy) or "YYYY-MM-DDTHH:mm[:ss]" — always returns midnight for date-only input
+    private LocalDateTime parseDateInput(String value) {
+        if (value == null || value.isBlank()) {
+            throw new BusinessException("INVALID_DATE_FORMAT", "Date must not be empty");
+        }
+        try {
+            return LocalDateTime.parse(value);
+        } catch (DateTimeParseException ignored) {
+            // fall through to date-only
+        }
+        try {
+            return LocalDate.parse(value).atStartOfDay();
+        } catch (DateTimeParseException e) {
+            throw new BusinessException("INVALID_DATE_FORMAT",
+                    "Date must be YYYY-MM-DD or YYYY-MM-DDTHH:mm format");
+        }
     }
 }
