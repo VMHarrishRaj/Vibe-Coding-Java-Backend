@@ -216,8 +216,7 @@ public class BookingService {
                     "You are not the renter for this booking");
         }
 
-        if (booking.getStatus() == BookingStatus.CONFIRMED ||
-                booking.getStatus() == BookingStatus.ACTIVE ||
+        if (booking.getStatus() == BookingStatus.ACTIVE ||
                 booking.getStatus() == BookingStatus.COMPLETED ||
                 booking.getStatus() == BookingStatus.REJECTED ||
                 booking.getStatus() == BookingStatus.CANCELLED) {
@@ -225,7 +224,7 @@ public class BookingService {
                     "Booking cannot be cancelled in status: " + booking.getStatus());
         }
 
-        // Refund if payment was already captured (e.g. cancelling from AWAITING_APPROVAL)
+        // Refund if payment was already captured (AWAITING_APPROVAL or CONFIRMED)
         paymentService.refundIfPaid(bookingId);
 
         User renter = booking.getRenter();
@@ -681,6 +680,12 @@ public class BookingService {
                         .kycVerified(renter.isKycVerified())
                         .profileImageUrl(renter.getProfileImageUrl())
                         .kycDocuments(kycDocs.isEmpty() ? null : kycDocs)
+                        .build())
+                .ownerInfo(BookingResponse.OwnerInfo.builder()
+                        .id(truck.getOwner().getId().toString())
+                        .fullname(truck.getOwner().getFullname())
+                        .phone(truck.getOwner().getPhone())
+                        .email(truck.getOwner().getEmail())
                         .build())
                 .truck(BookingResponse.TruckInfo.builder()
                         .id(truck.getId().toString())

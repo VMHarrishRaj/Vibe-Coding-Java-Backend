@@ -27,6 +27,9 @@ public class BookingResponse {
     // Renter info
     private RenterInfo renter;
 
+    // Owner info
+    private OwnerInfo ownerInfo;
+
     // Truck info
     private TruckInfo truck;
 
@@ -92,6 +95,17 @@ public class BookingResponse {
         private Boolean kycVerified;
         private String profileImageUrl;
         private List<KycDocument> kycDocuments;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class OwnerInfo {
+        private String id;
+        private String fullname;
+        private String phone;
+        private String email;
     }
 
     @Data

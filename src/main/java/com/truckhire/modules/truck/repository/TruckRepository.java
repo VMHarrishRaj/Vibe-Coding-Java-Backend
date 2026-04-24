@@ -290,6 +290,10 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
     // Admin dashboard: count non-deleted trucks by a specific status
     long countByStatusAndDeletedAtIsNull(TruckStatus status);
 
+    // Distinct cities for config/cities dropdown — only APPROVED non-deleted trucks
+    @Query("SELECT DISTINCT t.locationCity FROM Truck t WHERE t.status = com.truckhire.modules.truck.entity.TruckStatus.APPROVED AND t.deletedAt IS NULL ORDER BY t.locationCity ASC")
+    List<String> findDistinctApprovedCities();
+
     // Admin dashboard: count APPROVED trucks that have an ACTIVE booking today (rented right now)
     @Query("""
             SELECT COUNT(DISTINCT t) FROM Truck t

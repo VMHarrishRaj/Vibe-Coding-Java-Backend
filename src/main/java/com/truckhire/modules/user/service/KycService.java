@@ -83,13 +83,22 @@ public class KycService {
         String subDirectory = "kyc/" + userId;
         String filePath = fileStorageService.storeFile(file, subDirectory);
 
-        // Create DB record
-        UserDocument document = UserDocument.builder()
-                .user(user)
-                .documentType(docType)
-                .filePath(filePath)
-                .verificationStatus(VerificationStatus.PENDING)
-                .build();
+        // Upsert: if a document of the same type already exists, replace it
+        UserDocument document = userDocumentRepository
+                .findByUserIdAndDocumentType(userId, docType)
+                .map(existing -> {
+                    existing.setFilePath(filePath);
+                    existing.setVerificationStatus(VerificationStatus.PENDING);
+                    existing.setRejectionReason(null);
+                    existing.setVerifiedAt(null);
+                    return existing;
+                })
+                .orElseGet(() -> UserDocument.builder()
+                        .user(user)
+                        .documentType(docType)
+                        .filePath(filePath)
+                        .verificationStatus(VerificationStatus.PENDING)
+                        .build());
 
         UserDocument saved = userDocumentRepository.save(document);
         log.info("KYC document uploaded: userId={}, typeId={}, type={}, path={}",

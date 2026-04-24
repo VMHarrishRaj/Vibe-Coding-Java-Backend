@@ -246,6 +246,12 @@ public class PaymentService {
      */
     @Transactional
     public void refundIfPaid(UUID bookingId) {
+        // Idempotency: a refund row already exists — do not hit the gateway a second time
+        if (transactionRepository.existsByBookingIdAndType(bookingId, PaymentType.REFUND)) {
+            log.info("Refund already issued for bookingId={} — skipping", bookingId);
+            return;
+        }
+
         // If payment was initiated but never captured, mark it CANCELLED — no gateway call needed
         Optional<PaymentTransaction> pendingCharge = transactionRepository
                 .findByBookingIdAndTypeAndStatus(bookingId, PaymentType.CHARGE, PaymentStatus.PENDING);
@@ -1379,7 +1385,7 @@ public class PaymentService {
             com.lowagie.text.Font smallFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 9);
 
             // ── Header ──
-            doc.add(new com.lowagie.text.Paragraph("TruckHire — Invoice", titleFont));
+            doc.add(new com.lowagie.text.Paragraph("TruckRental — Invoice", titleFont));
             doc.add(new com.lowagie.text.Paragraph("Invoice #: " + detail.getInvoiceNumber(), headerFont));
             doc.add(new com.lowagie.text.Paragraph("Booking #: " + detail.getBookingNumber(), normalFont));
             doc.add(new com.lowagie.text.Paragraph("Payment Date: " + nullSafe(detail.getPaymentDate()), normalFont));
