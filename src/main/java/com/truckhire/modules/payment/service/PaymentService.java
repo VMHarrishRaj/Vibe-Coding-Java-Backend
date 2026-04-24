@@ -955,8 +955,8 @@ public class PaymentService {
                 .invoices(buildInvoiceEntries(txn, mileageDetail))
                 .booking(com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.BookingDetail.builder()
                         .id(booking.getId().toString())
-                        .startDate(booking.getStartDate().toString())
-                        .endDate(booking.getEndDate().toString())
+                        .startDate(booking.getStartDate().toLocalDate().toString())
+                        .endDate(booking.getEndDate().toLocalDate().toString())
                         .pickupLocation(booking.getPickupLocation())
                         .dropoffLocation(booking.getDropoffLocation())
                         .insuranceCost(booking.getInsuranceCost())
@@ -1300,8 +1300,8 @@ public class PaymentService {
 
         // ── Owner-only enrichment — only for PAYOUT transactions ──
         if (txn.getType() == PaymentType.PAYOUT) {
-            builder.startDate(booking.getStartDate() != null ? booking.getStartDate().toString() : null)
-                   .endDate(booking.getEndDate() != null ? booking.getEndDate().toString() : null)
+            builder.startDate(booking.getStartDate() != null ? booking.getStartDate().toLocalDate().toString() : null)
+                   .endDate(booking.getEndDate() != null ? booking.getEndDate().toLocalDate().toString() : null)
                    .failureReason(txn.getFailureReason());
 
             // grossAmount — use booking.totalAmount if set (includes mileage + day rate),
