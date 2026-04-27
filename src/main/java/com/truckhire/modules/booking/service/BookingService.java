@@ -765,6 +765,8 @@ public class BookingService {
                 .createdAt(booking.getCreatedAt() != null ? booking.getCreatedAt().toString() : null)
                 .isOverdue(booking.getStatus() == BookingStatus.ACTIVE
                         && booking.getEndDate().toLocalDate().isBefore(LocalDate.now()))
+                .odometerStart(booking.getOdometerStart())
+                .odometerEnd(booking.getOdometerEnd())
                 .build();
     }
 
