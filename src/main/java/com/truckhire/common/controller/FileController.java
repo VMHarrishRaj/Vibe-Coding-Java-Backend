@@ -82,8 +82,10 @@ public class FileController {
 
     private String determineContentType(String filename) {
         String lower = filename.toLowerCase();
-        if (lower.endsWith(".pdf")) return "application/pdf";
-        if (lower.endsWith(".png")) return "image/png";
-        return "image/jpeg"; // default for .jpg/.jpeg
+        if (lower.endsWith(".pdf"))  return "application/pdf";
+        if (lower.endsWith(".png"))  return "image/png";
+        if (lower.endsWith(".heic")) return "image/heic";
+        if (lower.endsWith(".heif")) return "image/heif";
+        return "image/jpeg";
     }
 }
