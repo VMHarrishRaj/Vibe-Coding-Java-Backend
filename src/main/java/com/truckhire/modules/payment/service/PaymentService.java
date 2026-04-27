@@ -63,6 +63,7 @@ public class PaymentService {
     private final PaymentConfig paymentConfig;
     private final RazorpayGatewayAdapter razorpayAdapter;
     private final StripeGatewayAdapter stripeAdapter;
+    private final com.truckhire.modules.truck.repository.TruckDocumentRepository truckDocumentRepository;
 
     @Value("${app.base-url}")
     private String baseUrl;
@@ -1322,6 +1323,214 @@ public class PaymentService {
         }
 
         return builder.build();
+    }
+
+    // ═══════════════════════════════════════
+    // RENTER PAYMENT HISTORY — BOOKING-GROUPED
+    // ═══════════════════════════════════════
+
+    /**
+     * Returns booking-grouped payment history for a RENTER.
+     *
+     * All CHARGE + MILEAGE_TOPUP + REFUND rows for the renter are fetched in one query,
+     * then grouped by booking in memory. Each booking group computes a single displayStatus
+     * derived from the business outcome — not from any individual transaction's raw status.
+     * The invoices list inside each group carries the raw rows for expanded card views.
+     *
+     * Pagination is applied to the booking groups (not the raw rows).
+     */
+    @Transactional(readOnly = true)
+    public com.truckhire.modules.payment.dto.RenterPaymentPageResponse
+            getRenterPaymentHistory(User renter, org.springframework.data.domain.Pageable pageable) {
+
+        java.util.List<PaymentTransaction> all =
+                transactionRepository.findRenterTransactionsForGrouping(renter.getId());
+
+        // Group by booking, preserving insertion order (query ordered by b.createdAt DESC)
+        java.util.LinkedHashMap<java.util.UUID, java.util.List<PaymentTransaction>> byBooking =
+                new java.util.LinkedHashMap<>();
+        for (PaymentTransaction t : all) {
+            byBooking.computeIfAbsent(t.getBooking().getId(), k -> new java.util.ArrayList<>()).add(t);
+        }
+
+        // Build one RenterPaymentGroupResponse per booking
+        java.util.List<com.truckhire.modules.payment.dto.RenterPaymentGroupResponse> allGroups =
+                byBooking.values().stream()
+                        .map(this::mapToRenterPaymentGroup)
+                        .collect(java.util.stream.Collectors.toList());
+
+        // Compute totals across ALL groups (before pagination slice)
+        java.math.BigDecimal totalPaid = java.math.BigDecimal.ZERO;
+        java.math.BigDecimal thisMonth = java.math.BigDecimal.ZERO;
+        java.math.BigDecimal pending   = java.math.BigDecimal.ZERO;
+        java.time.YearMonth currentMonth = java.time.YearMonth.now();
+
+        for (com.truckhire.modules.payment.dto.RenterPaymentGroupResponse g : allGroups) {
+            if ("SUCCEEDED".equals(g.getDisplayStatus()) || "REFUNDED".equals(g.getDisplayStatus())) {
+                totalPaid = totalPaid.add(g.getDisplayAmount());
+            }
+            if ("PENDING".equals(g.getDisplayStatus())) {
+                pending = pending.add(g.getDisplayAmount());
+            }
+            if (g.getPaidAt() != null) {
+                try {
+                    java.time.Instant paidInstant = java.time.Instant.parse(g.getPaidAt());
+                    java.time.YearMonth paidMonth = java.time.YearMonth.from(
+                            paidInstant.atZone(java.time.ZoneOffset.UTC));
+                    if (currentMonth.equals(paidMonth)) {
+                        thisMonth = thisMonth.add(g.getDisplayAmount());
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+
+        // Manual pagination of the groups list
+        int pageNum  = pageable.getPageNumber();
+        int pageSize = pageable.getPageSize();
+        int total    = allGroups.size();
+        int fromIdx  = Math.min(pageNum * pageSize, total);
+        int toIdx    = Math.min(fromIdx + pageSize, total);
+        java.util.List<com.truckhire.modules.payment.dto.RenterPaymentGroupResponse> pageContent =
+                allGroups.subList(fromIdx, toIdx);
+
+        com.truckhire.modules.payment.dto.RenterPaymentTotals totals =
+                com.truckhire.modules.payment.dto.RenterPaymentTotals.builder()
+                        .totalPaid(totalPaid)
+                        .totalTransactions(total)
+                        .thisMonth(thisMonth)
+                        .pending(pending)
+                        .build();
+
+        com.truckhire.common.dto.PagedResponse<com.truckhire.modules.payment.dto.RenterPaymentGroupResponse> page =
+                com.truckhire.common.dto.PagedResponse.<com.truckhire.modules.payment.dto.RenterPaymentGroupResponse>builder()
+                        .content(pageContent)
+                        .pageNumber(pageNum)
+                        .pageSize(pageSize)
+                        .totalElements(total)
+                        .totalPages((int) Math.ceil((double) total / pageSize))
+                        .last(toIdx >= total)
+                        .build();
+
+        return com.truckhire.modules.payment.dto.RenterPaymentPageResponse.builder()
+                .payments(page)
+                .totals(totals)
+                .build();
+    }
+
+    private com.truckhire.modules.payment.dto.RenterPaymentGroupResponse mapToRenterPaymentGroup(
+            java.util.List<PaymentTransaction> txns) {
+
+        // The booking is the same on all rows in this group
+        com.truckhire.modules.booking.entity.Booking booking = txns.get(0).getBooking();
+        com.truckhire.modules.truck.entity.Truck truck = booking.getTruck();
+
+        PaymentTransaction charge     = null;
+        PaymentTransaction mileage    = null;
+        PaymentTransaction refundRow  = null;
+
+        for (PaymentTransaction t : txns) {
+            switch (t.getType()) {
+                case CHARGE       -> charge    = t;
+                case MILEAGE_TOPUP -> mileage  = t;
+                case REFUND       -> refundRow = t;
+                default           -> {}
+            }
+        }
+
+        // ── Compute displayStatus from business outcome ──
+        // Priority: if a REFUND succeeded → REFUNDED regardless of charge row status.
+        // Otherwise read the charge row's status directly.
+        String displayStatus;
+        if (refundRow != null && refundRow.getStatus() == PaymentStatus.SUCCEEDED) {
+            displayStatus = "REFUNDED";
+        } else if (charge != null) {
+            displayStatus = switch (charge.getStatus()) {
+                case SUCCEEDED -> "SUCCEEDED";
+                case FAILED    -> "FAILED";
+                default        -> "PENDING";
+            };
+        } else {
+            displayStatus = "PENDING";
+        }
+
+        // ── Compute displayAmount (net the renter actually paid) ──
+        // SUCCEEDED: sum of charge + mileage amounts
+        // REFUNDED:  0 (full refund — we confirmed no partial refund scenario)
+        // PENDING/FAILED: charge amount (what will be / was attempted)
+        java.math.BigDecimal chargeAmt  = charge  != null ? charge.getAmount()  : java.math.BigDecimal.ZERO;
+        java.math.BigDecimal mileageAmt = mileage != null ? mileage.getAmount() : java.math.BigDecimal.ZERO;
+        java.math.BigDecimal displayAmount;
+        if ("REFUNDED".equals(displayStatus)) {
+            displayAmount = java.math.BigDecimal.ZERO;
+        } else {
+            displayAmount = chargeAmt.add(mileageAmt);
+        }
+
+        // ── paidAt: ISO timestamp of the CHARGE transaction ──
+        String paidAt = null;
+        if (charge != null && charge.getCreatedAt() != null
+                && charge.getStatus() == PaymentStatus.SUCCEEDED) {
+            paidAt = charge.getCreatedAt().toString();
+        }
+
+        // ── Truck cover photo — first photo uploaded ──
+        String coverPhotoUrl = null;
+        if (truck != null) {
+            java.util.List<com.truckhire.modules.truck.entity.TruckDocument> photos =
+                    truckDocumentRepository.findAllPhotosByTruckId(truck.getId());
+            if (!photos.isEmpty()) {
+                coverPhotoUrl = baseUrl + "/files/" + photos.get(0).getFilePath();
+            }
+        }
+
+        // ── Build invoices list ──
+        java.util.List<com.truckhire.modules.payment.dto.RenterPaymentInvoiceItem> invoices =
+                txns.stream()
+                        .map(t -> {
+                            String label = switch (t.getType()) {
+                                case CHARGE        -> "Day Rate";
+                                case MILEAGE_TOPUP -> "Mileage Charge";
+                                case REFUND        -> "Refund";
+                                default            -> t.getType().name();
+                            };
+                            boolean downloadable = t.getType() == PaymentType.CHARGE
+                                    || t.getType() == PaymentType.MILEAGE_TOPUP;
+                            return com.truckhire.modules.payment.dto.RenterPaymentInvoiceItem.builder()
+                                    .id(t.getId().toString())
+                                    .type(t.getType().name())
+                                    .label(label)
+                                    .amount(t.getAmount())
+                                    .status(t.getStatus().name())
+                                    .invoiceNumber(t.getInvoiceNumber())
+                                    .downloadable(downloadable)
+                                    .createdAt(t.getCreatedAt() != null ? t.getCreatedAt().toString() : null)
+                                    .build();
+                        })
+                        .collect(java.util.stream.Collectors.toList());
+
+        String truckModel = truck != null
+                ? (truck.getMake() != null ? truck.getMake() + " " : "") + truck.getModel()
+                : null;
+
+        return com.truckhire.modules.payment.dto.RenterPaymentGroupResponse.builder()
+                .bookingId(booking.getId().toString())
+                .bookingNumber(booking.getBookingNumber())
+                .truckModel(truckModel)
+                .truckRegistration(truck != null ? truck.getRegistrationNumber() : null)
+                .truckCoverPhotoUrl(coverPhotoUrl)
+                .startDate(booking.getStartDate() != null ? booking.getStartDate().toLocalDate().toString() : null)
+                .endDate(booking.getEndDate() != null ? booking.getEndDate().toLocalDate().toString() : null)
+                .displayStatus(displayStatus)
+                .displayAmount(displayAmount)
+                .currency(charge != null ? charge.getCurrency() : null)
+                .gateway(charge != null ? charge.getGateway().name() : null)
+                .paidAt(paidAt)
+                .chargeInvoiceId(charge != null ? charge.getId().toString() : null)
+                .chargeInvoiceNumber(charge != null ? charge.getInvoiceNumber() : null)
+                .mileageInvoiceId(mileage != null ? mileage.getId().toString() : null)
+                .mileageInvoiceNumber(mileage != null ? mileage.getInvoiceNumber() : null)
+                .invoices(invoices)
+                .build();
     }
 
     private String resolveOwnerGatewayId(User owner, PaymentGateway gateway) {

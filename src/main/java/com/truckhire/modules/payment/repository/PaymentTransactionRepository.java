@@ -118,6 +118,21 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             @Param("userId") java.util.UUID userId,
             org.springframework.data.domain.Pageable pageable);
 
+    // All renter transactions (non-paginated) for booking-grouped response.
+    // Ordered by booking creation DESC so groups surface in the same order as a
+    // flat newest-first list. CANCELLED excluded — no money moved.
+    @Query("""
+            SELECT t FROM PaymentTransaction t
+            JOIN FETCH t.booking b
+            JOIN FETCH b.truck
+            WHERE b.renter.id = :userId
+              AND t.type IN ('CHARGE', 'MILEAGE_TOPUP', 'REFUND')
+              AND t.status != 'CANCELLED'
+            ORDER BY b.createdAt DESC, t.createdAt ASC
+            """)
+    List<PaymentTransaction> findRenterTransactionsForGrouping(
+            @Param("userId") java.util.UUID userId);
+
     // OWNER earnings history — PAYOUT transactions for bookings they own
     @Query("""
             SELECT t FROM PaymentTransaction t

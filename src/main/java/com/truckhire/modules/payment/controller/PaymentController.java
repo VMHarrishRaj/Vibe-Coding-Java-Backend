@@ -5,6 +5,7 @@ import com.truckhire.common.dto.PagedResponse;
 import com.truckhire.common.util.SecurityUtils;
 import com.truckhire.modules.payment.dto.LinkBankAccountRequest;
 import com.truckhire.modules.payment.dto.MyPaymentHistoryResponse;
+import com.truckhire.modules.payment.dto.RenterPaymentPageResponse;
 import com.truckhire.modules.payment.dto.StripeConnectResponse;
 import com.truckhire.modules.payment.dto.PaymentInitiatedResponse;
 import com.truckhire.modules.payment.dto.PaymentStatusResponse;
@@ -97,17 +98,24 @@ public class PaymentController {
 
     /**
      * Payment history for the current user.
-     * RENTER: returns their CHARGE + REFUND transactions (what they paid / got refunded).
-     * OWNER:  returns their PAYOUT transactions (earnings received per booking).
+     * RENTER: booking-grouped response (RenterPaymentPageResponse) — fixes status label bug,
+     *         includes totals summary and invoices array per booking.
+     * OWNER:  flat PAYOUT list (PagedResponse<MyPaymentHistoryResponse>) — unchanged.
      * Role is resolved from the JWT automatically.
      */
     @GetMapping("/payments/mine")
     @PreAuthorize("hasAnyRole('RENTER', 'OWNER')")
-    public ResponseEntity<ApiResponse<PagedResponse<MyPaymentHistoryResponse>>> getMyPayments(
+    public ResponseEntity<ApiResponse<?>> getMyPayments(
             @PageableDefault(size = 50) Pageable pageable) {
         var currentUser = SecurityUtils.getCurrentUser();
-        PagedResponse<MyPaymentHistoryResponse> response = paymentService.getMyPayments(currentUser, pageable);
-        return ResponseEntity.ok(ApiResponse.success("Payment history retrieved", response));
+        String role = currentUser.getRole().getName();
+        if ("RENTER".equals(role)) {
+            RenterPaymentPageResponse response = paymentService.getRenterPaymentHistory(currentUser, pageable);
+            return ResponseEntity.ok(ApiResponse.success("Payment history retrieved", response));
+        } else {
+            PagedResponse<MyPaymentHistoryResponse> response = paymentService.getMyPayments(currentUser, pageable);
+            return ResponseEntity.ok(ApiResponse.success("Payment history retrieved", response));
+        }
     }
 
     /**
