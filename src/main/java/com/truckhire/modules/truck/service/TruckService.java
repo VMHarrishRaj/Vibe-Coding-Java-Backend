@@ -636,6 +636,62 @@ public class TruckService {
     }
 
     /**
+     * Owner: batch update blocked dates — block a list and unblock another list in one transaction.
+     * Called on "Save Availability" button. Each date is guarded individually (past / has booking),
+     * invalid dates are silently skipped and returned in the skipped[] list rather than failing the
+     * whole request — so valid changes are always committed even if some dates can't be changed.
+     */
+    @Transactional
+    public com.truckhire.modules.truck.dto.BatchBlockedDatesResponse batchUpdateBlockedDates(
+            UUID ownerId, UUID truckId,
+            java.util.List<java.time.LocalDate> datesToBlock,
+            java.util.List<java.time.LocalDate> datesToUnblock) {
+
+        Truck truck = findTruckOwnedBy(truckId, ownerId);
+        LocalDate today = LocalDate.now();
+
+        java.util.List<String> blocked = new java.util.ArrayList<>();
+        java.util.List<String> unblocked = new java.util.ArrayList<>();
+        java.util.List<String> skipped = new java.util.ArrayList<>();
+
+        // Process blocks
+        for (java.time.LocalDate date : datesToBlock) {
+            if (date.isBefore(today)) { skipped.add(date.toString()); continue; }
+            if (bookingRepository.existsConflictingBooking(truckId, date.atStartOfDay(), date.atStartOfDay())) {
+                skipped.add(date.toString()); continue;
+            }
+            if (!blockedDateRepository.findByTruckIdAndBlockedDate(truckId, date).isPresent()) {
+                blockedDateRepository.save(TruckBlockedDate.builder().truck(truck).blockedDate(date).build());
+            }
+            blocked.add(date.toString());
+        }
+
+        // Process unblocks — bulk delete for efficiency
+        java.util.List<java.time.LocalDate> validUnblocks = datesToUnblock.stream()
+                .filter(date -> !date.isBefore(today))
+                .filter(date -> !bookingRepository.existsConflictingBooking(truckId, date.atStartOfDay(), date.atStartOfDay()))
+                .collect(java.util.stream.Collectors.toList());
+
+        datesToUnblock.stream()
+                .filter(date -> !validUnblocks.contains(date))
+                .forEach(date -> skipped.add(date.toString()));
+
+        if (!validUnblocks.isEmpty()) {
+            blockedDateRepository.deleteByTruckIdAndBlockedDateIn(truckId, validUnblocks);
+            validUnblocks.forEach(date -> unblocked.add(date.toString()));
+        }
+
+        log.info("Batch availability update: truckId={}, blocked={}, unblocked={}, skipped={}",
+                truckId, blocked.size(), unblocked.size(), skipped.size());
+
+        return com.truckhire.modules.truck.dto.BatchBlockedDatesResponse.builder()
+                .blocked(blocked)
+                .unblocked(unblocked)
+                .skipped(skipped)
+                .build();
+    }
+
+    /**
      * Check whether a truck is available for a specific date range (public, pre-booking validation).
      * Validates that startDate < endDate and startDate >= today.
      * Returns the conflicting booking's date range when unavailable.

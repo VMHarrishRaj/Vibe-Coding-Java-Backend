@@ -302,4 +302,23 @@ public class TruckController {
         ToggleBlockedDateResponse response = truckService.toggleBlockedDate(owner.getId(), id, request.getDate());
         return ResponseEntity.ok(ApiResponse.success("Date availability updated", response));
     }
+
+    /**
+     * POST /api/v1/trucks/{id}/blocked-dates/batch
+     * Owner: commit all staged availability changes in one call (Save Availability button).
+     * Accepts two lists: datesToBlock and datesToUnblock.
+     * Invalid dates (past or has active booking) are silently skipped and returned in skipped[].
+     * Valid changes are always committed even if some dates are skipped.
+     */
+    @PostMapping("/{id}/blocked-dates/batch")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<ApiResponse<BatchBlockedDatesResponse>> batchUpdateBlockedDates(
+            @PathVariable UUID id,
+            @Valid @RequestBody BatchBlockedDatesRequest request) {
+
+        User owner = SecurityUtils.getCurrentUser();
+        BatchBlockedDatesResponse response = truckService.batchUpdateBlockedDates(
+                owner.getId(), id, request.getDatesToBlock(), request.getDatesToUnblock());
+        return ResponseEntity.ok(ApiResponse.success("Availability saved", response));
+    }
 }

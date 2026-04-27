@@ -2,6 +2,7 @@ package com.truckhire.modules.truck.repository;
 
 import com.truckhire.modules.truck.entity.TruckBlockedDate;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -27,4 +28,11 @@ public interface TruckBlockedDateRepository extends JpaRepository<TruckBlockedDa
             @Param("truckId") UUID truckId,
             @Param("from") LocalDate from,
             @Param("to") LocalDate to);
+
+    // Bulk delete — used by batch availability save
+    @Modifying
+    @Query("DELETE FROM TruckBlockedDate tbd WHERE tbd.truck.id = :truckId AND tbd.blockedDate IN :dates")
+    void deleteByTruckIdAndBlockedDateIn(
+            @Param("truckId") UUID truckId,
+            @Param("dates") List<LocalDate> dates);
 }
