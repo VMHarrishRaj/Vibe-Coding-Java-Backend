@@ -43,8 +43,9 @@ public class OwnerDashboardResponse {
     private long totalBookings;             // sum of the above four
 
     // ── Earnings summary ──
-    private BigDecimal totalEarnings;       // lifetime: PAID_OUT + PAYOUT_PENDING ownerAmount
-    private BigDecimal pendingPayoutAmount; // ownerAmount sitting in PAYOUT_PENDING (owed, not yet transferred)
+    private BigDecimal totalEarnings;           // lifetime: PAID_OUT + PAYOUT_PENDING ownerAmount
+    private BigDecimal completedPayoutAmount;   // ownerAmount successfully transferred (PAID_OUT)
+    private BigDecimal pendingPayoutAmount;     // ownerAmount sitting in PAYOUT_PENDING (owed, not yet transferred)
 
     // ── Monthly revenue — last 12 months ──
     // Each entry: { month: "2026-03", revenue: 1200.00 }

@@ -299,6 +299,16 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             """)
     BigDecimal sumSettledOwnerPayouts();
 
+    /** Owner dashboard: total ownerAmount successfully paid out (PAID_OUT) for a specific owner. */
+    @Query("""
+            SELECT COALESCE(SUM(t.ownerAmount), 0)
+            FROM PaymentTransaction t
+            WHERE t.booking.owner.id = :ownerId
+              AND t.type = 'PAYOUT'
+              AND t.status = 'PAID_OUT'
+            """)
+    BigDecimal sumOwnerCompletedPayouts(@Param("ownerId") UUID ownerId);
+
     /**
      * Owner dashboard: sum of ownerAmount still awaiting payout (PAYOUT_PENDING).
      * Money is owed to the owner but hasn't transferred yet (no gateway account linked,

@@ -380,6 +380,7 @@ public class TruckService {
 
         // ── Earnings ──
         BigDecimal totalEarnings = transactionRepository.sumOwnerEarnings(ownerId);
+        BigDecimal completedPayoutAmount = transactionRepository.sumOwnerCompletedPayouts(ownerId);
         BigDecimal pendingPayoutAmount = transactionRepository.sumOwnerPendingPayouts(ownerId);
 
         // ── Monthly revenue — last 12 months ──
@@ -413,6 +414,7 @@ public class TruckService {
                 .totalBookings(totalBookings)
                 // earnings
                 .totalEarnings(totalEarnings)
+                .completedPayoutAmount(completedPayoutAmount)
                 .pendingPayoutAmount(pendingPayoutAmount)
                 // monthly revenue
                 .monthlyRevenue(monthlyRevenue)
