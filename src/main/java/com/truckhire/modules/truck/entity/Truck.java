@@ -111,6 +111,9 @@ public class Truck extends BaseAuditEntity {
     @Column(name = "vin_number", length = 17)
     private String vinNumber;
 
+    @Column(name = "transmission", length = 50)
+    private String transmission;
+
     @OneToMany(mappedBy = "truck", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<PickupLocation> pickupLocations = new ArrayList<>();

@@ -142,6 +142,7 @@ public class BookingResponse {
         private String color;
         private String fuelType;    // PETROL / DIESEL / ELECTRIC / HYBRID — null for existing trucks
         private String vinNumber;
+        private String transmission;
     }
 
     @Data

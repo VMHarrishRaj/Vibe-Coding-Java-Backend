@@ -99,6 +99,7 @@ public class AdminInvoiceDetailResponse {
     public static class OwnerInfo {
         private String fullname;
         private String email;
+        private String phone;
         private boolean stripeConnected; // true when owner has completed Stripe Connect onboarding
         private String bankName;
         private String accountNumber;   // masked: ****XXXX (last 4 digits only) — null if no bank account linked

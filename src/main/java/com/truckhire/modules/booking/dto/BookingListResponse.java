@@ -21,6 +21,7 @@ public class BookingListResponse {
     private String renterName;
     private String truckModel;      // "{make} {model}"
     private String truckId;
+    private String truckCoverPhotoUrl;
     private String startDate;       // YYYY-MM-DD
     private String endDate;         // YYYY-MM-DD
     private Integer totalDays;
@@ -30,4 +31,6 @@ public class BookingListResponse {
     private String displayStatus; // grouped label for UI: ONGOING, UPCOMING, COMPLETED, REJECTED, CANCELLED
     private String createdAt;
     private Boolean isOverdue;  // true when status=ACTIVE and endDate < today
+    private Integer odometerStart; // null until renter calls PUT /bookings/{id}/start
+    private Integer odometerEnd;   // null until renter calls PUT /bookings/{id}/end
 }

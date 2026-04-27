@@ -94,6 +94,9 @@ public class SecurityConfig {
                     // Payment: webhook receivers (no JWT — gateway calls these)
                     .requestMatchers("/payments/webhook/**").permitAll()
 
+                    // Payment: token-based PDF download (no JWT — mobile opens via Linking.openURL)
+                    .requestMatchers(HttpMethod.GET, "/payments/download").permitAll()
+
                     // Stripe Connect return/refresh — Stripe drives these redirects, no JWT
                     .requestMatchers("/stripe/connect/return", "/stripe/connect/refresh").permitAll()
 
