@@ -3,6 +3,7 @@ package com.truckhire.modules.payment.controller;
 import com.truckhire.common.dto.ApiResponse;
 import com.truckhire.common.dto.PagedResponse;
 import com.truckhire.common.util.SecurityUtils;
+import com.truckhire.modules.payment.dto.DownloadTokenResponse;
 import com.truckhire.modules.payment.dto.LinkBankAccountRequest;
 import com.truckhire.modules.payment.dto.MyPaymentHistoryResponse;
 import com.truckhire.modules.payment.dto.RenterPaymentPageResponse;
@@ -10,7 +11,9 @@ import com.truckhire.modules.payment.dto.StripeConnectResponse;
 import com.truckhire.modules.payment.dto.PaymentInitiatedResponse;
 import com.truckhire.modules.payment.dto.PaymentStatusResponse;
 import com.truckhire.modules.payment.dto.VerifyPaymentRequest;
+import com.truckhire.modules.payment.service.DownloadTokenService;
 import com.truckhire.modules.payment.service.PaymentService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -37,6 +40,7 @@ import java.util.UUID;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final DownloadTokenService downloadTokenService;
 
     /**
      * Initiate payment for a booking.
@@ -203,6 +207,55 @@ public class PaymentController {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_PDF);
         headers.setContentDispositionFormData("attachment", "invoice-" + id + ".pdf");
+        return ResponseEntity.ok().headers(headers).body(pdf);
+    }
+
+    /**
+     * POST /payments/{id}/download-token
+     * Issues a short-lived signed URL for unauthenticated PDF download.
+     * Used by mobile: frontend opens the returned url via Linking.openURL (device browser),
+     * which cannot send Authorization headers.
+     * Token is stored in Redis with a 5-minute TTL, reusable within that window.
+     */
+    @PostMapping("/payments/{id}/download-token")
+    @PreAuthorize("hasAnyRole('RENTER', 'OWNER')")
+    public ResponseEntity<ApiResponse<DownloadTokenResponse>> issueDownloadToken(
+            @PathVariable UUID id,
+            HttpServletRequest request) {
+        UUID userId = SecurityUtils.getCurrentUser().getId();
+        // Access-check: reuse the existing guard — throws if user has no access to this invoice
+        paymentService.generateInvoicePdfForUser(id, userId);
+        String token = downloadTokenService.issueToken(id, userId);
+        String baseUrl = request.getScheme() + "://" + request.getServerName()
+                + (request.getServerPort() != 80 && request.getServerPort() != 443
+                        ? ":" + request.getServerPort() : "")
+                + request.getContextPath();
+        String url = baseUrl + "/api/v1/payments/download?token=" + token;
+        DownloadTokenResponse response = DownloadTokenResponse.builder()
+                .url(url)
+                .expiresIn(DownloadTokenService.TTL_SECONDS)
+                .build();
+        return ResponseEntity.ok(ApiResponse.success("Download token issued", response));
+    }
+
+    /**
+     * GET /payments/download?token={token}
+     * Public endpoint — no JWT required. Validates the short-lived Redis token
+     * issued by POST /payments/{id}/download-token and streams the invoice PDF.
+     */
+    @GetMapping("/payments/download")
+    public ResponseEntity<byte[]> downloadInvoiceByToken(@RequestParam String token) {
+        String[] parts = downloadTokenService.resolveToken(token);
+        if (parts == null) {
+            throw new com.truckhire.common.exception.BusinessException(
+                    "INVALID_DOWNLOAD_TOKEN", "Download link is invalid or has expired.");
+        }
+        UUID transactionId = UUID.fromString(parts[0]);
+        UUID userId = UUID.fromString(parts[1]);
+        byte[] pdf = paymentService.generateInvoicePdfForUser(transactionId, userId);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.setContentDispositionFormData("attachment", "invoice-" + transactionId + ".pdf");
         return ResponseEntity.ok().headers(headers).body(pdf);
     }
 }
