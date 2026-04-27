@@ -858,6 +858,7 @@ public class PaymentService {
                 com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.OwnerInfo.builder()
                         .fullname(owner.getFullname())
                         .email(owner.getEmail())
+                        .phone(owner.getPhone())
                         .stripeConnected(owner.getStripeAccountId() != null)
                         .bankName(owner.getBankAccountNumber() != null ? owner.getBankName() : null)
                         .accountNumber(maskedAccount)
@@ -1585,90 +1586,341 @@ public class PaymentService {
         com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse detail = getAdminInvoiceDetail(transactionId);
 
         try (java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
-            com.lowagie.text.Document doc = new com.lowagie.text.Document(com.lowagie.text.PageSize.A4, 50, 50, 50, 50);
+            com.lowagie.text.Document doc = new com.lowagie.text.Document(com.lowagie.text.PageSize.A4, 50, 50, 60, 50);
             com.lowagie.text.pdf.PdfWriter.getInstance(doc, out);
             doc.open();
 
-            com.lowagie.text.Font titleFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 18, com.lowagie.text.Font.BOLD);
-            com.lowagie.text.Font headerFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 11, com.lowagie.text.Font.BOLD);
-            com.lowagie.text.Font normalFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 10);
-            com.lowagie.text.Font smallFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 9);
+            // ── Fonts ──
+            com.lowagie.text.Font brandFont   = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 22, com.lowagie.text.Font.BOLD,  new java.awt.Color(30, 64, 175));
+            com.lowagie.text.Font invoiceLabel= new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 11, com.lowagie.text.Font.NORMAL, new java.awt.Color(100, 116, 139));
+            com.lowagie.text.Font metaKey     = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 9,  com.lowagie.text.Font.NORMAL, new java.awt.Color(100, 116, 139));
+            com.lowagie.text.Font metaVal     = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 9,  com.lowagie.text.Font.BOLD);
+            com.lowagie.text.Font sectionHead = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 9,  com.lowagie.text.Font.BOLD,   new java.awt.Color(30, 64, 175));
+            com.lowagie.text.Font bodyFont    = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 9,  com.lowagie.text.Font.NORMAL);
+            com.lowagie.text.Font bodyBold    = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 9,  com.lowagie.text.Font.BOLD);
+            com.lowagie.text.Font tableHead   = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 9,  com.lowagie.text.Font.BOLD,   new java.awt.Color(255, 255, 255));
+            com.lowagie.text.Font totalFont   = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 10, com.lowagie.text.Font.BOLD,   new java.awt.Color(30, 64, 175));
+            com.lowagie.text.Font smallGray   = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 8,  com.lowagie.text.Font.NORMAL, new java.awt.Color(148, 163, 184));
 
-            // ── Header ──
-            doc.add(new com.lowagie.text.Paragraph("TruckRental — Invoice", titleFont));
-            doc.add(new com.lowagie.text.Paragraph("Invoice #: " + detail.getInvoiceNumber(), headerFont));
-            doc.add(new com.lowagie.text.Paragraph("Booking #: " + detail.getBookingNumber(), normalFont));
-            doc.add(new com.lowagie.text.Paragraph("Payment Date: " + nullSafe(detail.getPaymentDate()), normalFont));
-            doc.add(new com.lowagie.text.Paragraph("Status: " + nullSafe(detail.getDisplayPaymentStatus()), normalFont));
-            doc.add(com.lowagie.text.Chunk.NEWLINE);
+            java.awt.Color headerBg   = new java.awt.Color(30, 64, 175);
+            java.awt.Color altRowBg   = new java.awt.Color(241, 245, 249);
+            java.awt.Color dividerCol = new java.awt.Color(226, 232, 240);
 
-            // ── Renter ──
+            // ── Helper: format ISO date strings ──
+            java.time.format.DateTimeFormatter humanDate = java.time.format.DateTimeFormatter.ofPattern("MMMM d, yyyy");
+            java.util.function.Function<String, String> fmtDate = raw -> {
+                if (raw == null || raw.equals("—")) return "—";
+                try {
+                    if (raw.contains("T")) {
+                        return java.time.Instant.parse(raw)
+                                .atZone(java.time.ZoneOffset.UTC)
+                                .format(humanDate);
+                    }
+                    return java.time.LocalDate.parse(raw).format(humanDate);
+                } catch (Exception ex) { return raw; }
+            };
+
+            // ═══════════════════════════════════════════════════════
+            // SECTION 1 — Two-column header: brand left | invoice meta right
+            // ═══════════════════════════════════════════════════════
+            com.lowagie.text.pdf.PdfPTable headerTable = new com.lowagie.text.pdf.PdfPTable(2);
+            headerTable.setWidthPercentage(100);
+            headerTable.setWidths(new float[]{55f, 45f});
+            headerTable.getDefaultCell().setBorder(com.lowagie.text.Rectangle.NO_BORDER);
+            headerTable.getDefaultCell().setPadding(0);
+
+            // Left: brand block
+            com.lowagie.text.pdf.PdfPCell brandCell = new com.lowagie.text.pdf.PdfPCell();
+            brandCell.setBorder(com.lowagie.text.Rectangle.NO_BORDER);
+            brandCell.setPadding(0);
+            com.lowagie.text.Paragraph brandPara = new com.lowagie.text.Paragraph("TruckRental", brandFont);
+            brandPara.setSpacingAfter(2);
+            brandCell.addElement(brandPara);
+            brandCell.addElement(new com.lowagie.text.Paragraph("Truck Rental Marketplace", invoiceLabel));
+            brandCell.addElement(new com.lowagie.text.Paragraph("support@truckhire.com", invoiceLabel));
+            brandCell.addElement(new com.lowagie.text.Paragraph("www.truckhire.com", invoiceLabel));
+            headerTable.addCell(brandCell);
+
+            // Right: invoice meta
+            com.lowagie.text.pdf.PdfPCell metaCell = new com.lowagie.text.pdf.PdfPCell();
+            metaCell.setBorder(com.lowagie.text.Rectangle.NO_BORDER);
+            metaCell.setPadding(0);
+            metaCell.setHorizontalAlignment(com.lowagie.text.Element.ALIGN_RIGHT);
+
+            com.lowagie.text.pdf.PdfPTable metaInner = new com.lowagie.text.pdf.PdfPTable(2);
+            metaInner.setWidthPercentage(100);
+            metaInner.setWidths(new float[]{45f, 55f});
+            java.util.function.BiConsumer<String, String> addMeta = (k, v) -> {
+                com.lowagie.text.pdf.PdfPCell kc = new com.lowagie.text.pdf.PdfPCell(new com.lowagie.text.Phrase(k, metaKey));
+                kc.setBorder(com.lowagie.text.Rectangle.NO_BORDER);
+                kc.setPaddingBottom(3);
+                kc.setHorizontalAlignment(com.lowagie.text.Element.ALIGN_RIGHT);
+                com.lowagie.text.pdf.PdfPCell vc = new com.lowagie.text.pdf.PdfPCell(new com.lowagie.text.Phrase(v, metaVal));
+                vc.setBorder(com.lowagie.text.Rectangle.NO_BORDER);
+                vc.setPaddingBottom(3);
+                vc.setHorizontalAlignment(com.lowagie.text.Element.ALIGN_RIGHT);
+                metaInner.addCell(kc);
+                metaInner.addCell(vc);
+            };
+            addMeta.accept("INVOICE", nullSafe(detail.getInvoiceNumber()));
+            addMeta.accept("BOOKING", nullSafe(detail.getBookingNumber()));
+            addMeta.accept("ISSUED", fmtDate.apply(detail.getPaymentDate()));
+            addMeta.accept("STATUS", nullSafe(detail.getDisplayPaymentStatus()).toUpperCase());
+            metaCell.addElement(metaInner);
+            headerTable.addCell(metaCell);
+            doc.add(headerTable);
+
+            // Divider
+            com.lowagie.text.pdf.PdfPTable divider = new com.lowagie.text.pdf.PdfPTable(1);
+            divider.setWidthPercentage(100);
+            divider.setSpacingBefore(10);
+            divider.setSpacingAfter(12);
+            com.lowagie.text.pdf.PdfPCell divCell = new com.lowagie.text.pdf.PdfPCell();
+            divCell.setBackgroundColor(dividerCol);
+            divCell.setFixedHeight(1f);
+            divCell.setBorder(com.lowagie.text.Rectangle.NO_BORDER);
+            divider.addCell(divCell);
+            doc.add(divider);
+
+            // ═══════════════════════════════════════════════════════
+            // SECTION 2 — Billed To (left) | Vehicle Owner (right)
+            // ═══════════════════════════════════════════════════════
+            com.lowagie.text.pdf.PdfPTable partyTable = new com.lowagie.text.pdf.PdfPTable(2);
+            partyTable.setWidthPercentage(100);
+            partyTable.setWidths(new float[]{50f, 50f});
+            partyTable.setSpacingAfter(12);
+            partyTable.getDefaultCell().setBorder(com.lowagie.text.Rectangle.NO_BORDER);
+
+            // Billed To
+            com.lowagie.text.pdf.PdfPCell billedCell = new com.lowagie.text.pdf.PdfPCell();
+            billedCell.setBorder(com.lowagie.text.Rectangle.NO_BORDER);
+            billedCell.setPaddingBottom(4);
+            billedCell.addElement(new com.lowagie.text.Paragraph("BILLED TO", sectionHead));
             if (detail.getBooking() != null && detail.getBooking().getRenter() != null) {
                 com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.RenterInfo renter = detail.getBooking().getRenter();
-                doc.add(new com.lowagie.text.Paragraph("Billed To", headerFont));
-                doc.add(new com.lowagie.text.Paragraph(nullSafe(renter.getFullname()), normalFont));
-                doc.add(new com.lowagie.text.Paragraph(nullSafe(renter.getEmail()), normalFont));
-                doc.add(new com.lowagie.text.Paragraph(nullSafe(renter.getPhone()), normalFont));
-                doc.add(com.lowagie.text.Chunk.NEWLINE);
+                billedCell.addElement(new com.lowagie.text.Paragraph(nullSafe(renter.getFullname()), bodyBold));
+                billedCell.addElement(new com.lowagie.text.Paragraph(nullSafe(renter.getEmail()), bodyFont));
+                billedCell.addElement(new com.lowagie.text.Paragraph(nullSafe(renter.getPhone()), bodyFont));
             }
+            partyTable.addCell(billedCell);
 
-            // ── Booking Details ──
-            if (detail.getBooking() != null) {
-                com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.BookingDetail booking = detail.getBooking();
-                doc.add(new com.lowagie.text.Paragraph("Booking Details", headerFont));
-                if (booking.getTruck() != null) {
-                    doc.add(new com.lowagie.text.Paragraph("Vehicle: " + nullSafe(booking.getTruck().getModel())
-                            + " (" + nullSafe(booking.getTruck().getRegistrationNumber()) + ")", normalFont));
-                }
-                doc.add(new com.lowagie.text.Paragraph("Period: " + nullSafe(booking.getStartDate()) + " to " + nullSafe(booking.getEndDate()), normalFont));
-                doc.add(new com.lowagie.text.Paragraph("Pickup: " + nullSafe(booking.getPickupLocation()), normalFont));
-                doc.add(new com.lowagie.text.Paragraph("Dropoff: " + nullSafe(booking.getDropoffLocation()), normalFont));
-                doc.add(com.lowagie.text.Chunk.NEWLINE);
-            }
-
-            // ── Cost Breakdown ──
-            doc.add(new com.lowagie.text.Paragraph("Cost Breakdown", headerFont));
-            if (detail.getCombinedSummary() != null) {
-                com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.CombinedSummary s = detail.getCombinedSummary();
-                doc.add(new com.lowagie.text.Paragraph("Base Rental: $" + nullSafe(s.getDayAmount()), normalFont));
-                if (s.getMileageAmount() != null && s.getMileageAmount().compareTo(BigDecimal.ZERO) > 0) {
-                    doc.add(new com.lowagie.text.Paragraph("Mileage Charge: $" + s.getMileageAmount(), normalFont));
-                }
-                if (s.getInsuranceCost() != null && s.getInsuranceCost().compareTo(BigDecimal.ZERO) > 0) {
-                    doc.add(new com.lowagie.text.Paragraph("Insurance: $" + s.getInsuranceCost(), normalFont));
-                }
-                if (s.getAdditionalServicesCost() != null && s.getAdditionalServicesCost().compareTo(BigDecimal.ZERO) > 0) {
-                    doc.add(new com.lowagie.text.Paragraph("Additional Services: $" + s.getAdditionalServicesCost(), normalFont));
-                }
-                doc.add(new com.lowagie.text.Paragraph("Total Paid: $" + nullSafe(s.getTotalPaid()), headerFont));
-            } else {
-                doc.add(new com.lowagie.text.Paragraph("Total: $" + nullSafe(detail.getTotal()), headerFont));
-            }
-            doc.add(com.lowagie.text.Chunk.NEWLINE);
-
-            // ── Transaction Reference ──
-            doc.add(new com.lowagie.text.Paragraph("Transaction Reference", headerFont));
-            doc.add(new com.lowagie.text.Paragraph("Transaction ID: " + nullSafe(detail.getTransactionId()), normalFont));
-            doc.add(new com.lowagie.text.Paragraph("Gateway: " + nullSafe(detail.getGateway()), normalFont));
-            if (detail.getCardLast4() != null) {
-                doc.add(new com.lowagie.text.Paragraph("Card: **** **** **** " + detail.getCardLast4(), normalFont));
-            }
-            doc.add(com.lowagie.text.Chunk.NEWLINE);
-
-            // ── Settlement ──
-            doc.add(new com.lowagie.text.Paragraph("Settlement", headerFont));
-            doc.add(new com.lowagie.text.Paragraph("Status: " + nullSafe(detail.getDisplaySettlementStatus()), normalFont));
+            // Vehicle Owner
+            com.lowagie.text.pdf.PdfPCell ownerCell = new com.lowagie.text.pdf.PdfPCell();
+            ownerCell.setBorder(com.lowagie.text.Rectangle.NO_BORDER);
+            ownerCell.setPaddingBottom(4);
+            ownerCell.addElement(new com.lowagie.text.Paragraph("VEHICLE OWNER", sectionHead));
             if (detail.getBooking() != null && detail.getBooking().getOwner() != null) {
                 com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.OwnerInfo owner = detail.getBooking().getOwner();
-                doc.add(new com.lowagie.text.Paragraph("Owner: " + nullSafe(owner.getFullname()), normalFont));
-                if (owner.getSettlementId() != null) {
-                    doc.add(new com.lowagie.text.Paragraph("Settlement ID: " + owner.getSettlementId(), normalFont));
-                    doc.add(new com.lowagie.text.Paragraph("Settlement Date: " + nullSafe(owner.getSettlementDate()), normalFont));
+                ownerCell.addElement(new com.lowagie.text.Paragraph(nullSafe(owner.getFullname()), bodyBold));
+                ownerCell.addElement(new com.lowagie.text.Paragraph(nullSafe(owner.getEmail()), bodyFont));
+                if (owner.getPhone() != null) {
+                    ownerCell.addElement(new com.lowagie.text.Paragraph(owner.getPhone(), bodyFont));
                 }
             }
+            partyTable.addCell(ownerCell);
+            doc.add(partyTable);
+
+            // ═══════════════════════════════════════════════════════
+            // SECTION 3 — Rental Details
+            // ═══════════════════════════════════════════════════════
+            doc.add(new com.lowagie.text.Paragraph("RENTAL DETAILS", sectionHead));
+            doc.add(com.lowagie.text.Chunk.NEWLINE);
+            if (detail.getBooking() != null) {
+                com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.BookingDetail booking = detail.getBooking();
+
+                com.lowagie.text.pdf.PdfPTable detailsTable = new com.lowagie.text.pdf.PdfPTable(2);
+                detailsTable.setWidthPercentage(100);
+                detailsTable.setWidths(new float[]{30f, 70f});
+                detailsTable.setSpacingAfter(12);
+
+                java.util.function.BiConsumer<String, String> addRow = (label, value) -> {
+                    com.lowagie.text.pdf.PdfPCell lc = new com.lowagie.text.pdf.PdfPCell(new com.lowagie.text.Phrase(label, metaKey));
+                    lc.setBorder(com.lowagie.text.Rectangle.BOTTOM);
+                    lc.setBorderColor(dividerCol);
+                    lc.setPadding(5);
+                    com.lowagie.text.pdf.PdfPCell vc = new com.lowagie.text.pdf.PdfPCell(new com.lowagie.text.Phrase(value, bodyFont));
+                    vc.setBorder(com.lowagie.text.Rectangle.BOTTOM);
+                    vc.setBorderColor(dividerCol);
+                    vc.setPadding(5);
+                    detailsTable.addCell(lc);
+                    detailsTable.addCell(vc);
+                };
+
+                if (booking.getTruck() != null) {
+                    addRow.accept("Vehicle", nullSafe(booking.getTruck().getModel())
+                            + "  (" + nullSafe(booking.getTruck().getRegistrationNumber()) + ")");
+                    if (booking.getTruck().getLocationCity() != null) {
+                        addRow.accept("Truck Base", booking.getTruck().getLocationCity());
+                    }
+                }
+                addRow.accept("Rental Period", fmtDate.apply(booking.getStartDate()) + "  →  " + fmtDate.apply(booking.getEndDate()));
+                addRow.accept("Pickup Location", nullSafe(booking.getPickupLocation()));
+                addRow.accept("Drop-off Location", nullSafe(booking.getDropoffLocation()));
+                doc.add(detailsTable);
+            }
+
+            // ═══════════════════════════════════════════════════════
+            // SECTION 4 — Cost Breakdown (line-item table)
+            // ═══════════════════════════════════════════════════════
+            doc.add(new com.lowagie.text.Paragraph("COST BREAKDOWN", sectionHead));
             doc.add(com.lowagie.text.Chunk.NEWLINE);
 
-            doc.add(new com.lowagie.text.Paragraph("This is a system-generated invoice.", smallFont));
+            com.lowagie.text.pdf.PdfPTable costTable = new com.lowagie.text.pdf.PdfPTable(4);
+            costTable.setWidthPercentage(100);
+            costTable.setWidths(new float[]{40f, 20f, 20f, 20f});
+            costTable.setSpacingAfter(6);
+
+            // Table header row
+            String[] colHeaders = {"Description", "Rate", "Qty / Unit", "Amount"};
+            for (String col : colHeaders) {
+                com.lowagie.text.pdf.PdfPCell hc = new com.lowagie.text.pdf.PdfPCell(new com.lowagie.text.Phrase(col, tableHead));
+                hc.setBackgroundColor(headerBg);
+                hc.setPadding(6);
+                hc.setBorder(com.lowagie.text.Rectangle.NO_BORDER);
+                hc.setHorizontalAlignment(col.equals("Description") ? com.lowagie.text.Element.ALIGN_LEFT : com.lowagie.text.Element.ALIGN_RIGHT);
+                costTable.addCell(hc);
+            }
+
+            boolean altRow = false;
+            java.util.function.Function<Boolean, java.awt.Color> rowBg = alt -> alt ? altRowBg : java.awt.Color.WHITE;
+
+            java.util.function.Consumer<String[]> addLineItem = cols -> {
+                // cols: [description, rate, qty, amount]
+                boolean isAlt = altRow; // capture — effectively final workaround via array
+                // We use a shared mutable boolean via the table's row count instead
+                for (int ci = 0; ci < cols.length; ci++) {
+                    com.lowagie.text.pdf.PdfPCell lc = new com.lowagie.text.pdf.PdfPCell(
+                            new com.lowagie.text.Phrase(cols[ci], ci == 0 ? bodyFont : bodyFont));
+                    lc.setBorder(com.lowagie.text.Rectangle.BOTTOM);
+                    lc.setBorderColor(dividerCol);
+                    lc.setPadding(6);
+                    lc.setHorizontalAlignment(ci == 0 ? com.lowagie.text.Element.ALIGN_LEFT : com.lowagie.text.Element.ALIGN_RIGHT);
+                    costTable.addCell(lc);
+                }
+            };
+
+            if (detail.getCombinedSummary() != null) {
+                com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.CombinedSummary s = detail.getCombinedSummary();
+
+                // Day-rate line: compute number of days from booking dates
+                int rentalDays = 1;
+                if (detail.getBooking() != null) {
+                    try {
+                        java.time.LocalDate sd = java.time.LocalDate.parse(detail.getBooking().getStartDate());
+                        java.time.LocalDate ed = java.time.LocalDate.parse(detail.getBooking().getEndDate());
+                        rentalDays = (int) java.time.temporal.ChronoUnit.DAYS.between(sd, ed);
+                        if (rentalDays < 1) rentalDays = 1;
+                    } catch (Exception ignored) {}
+                }
+                BigDecimal pricePerDay = (detail.getBooking() != null && detail.getBooking().getTruck() != null)
+                        ? detail.getBooking().getTruck().getPricePerDay() : null;
+                String rateStr = pricePerDay != null ? "$" + pricePerDay : "—";
+                addLineItem.accept(new String[]{"Base Rental (Day Rate)", rateStr, rentalDays + " day" + (rentalDays == 1 ? "" : "s"), "$" + s.getDayAmount()});
+
+                if (s.getMileageAmount() != null && s.getMileageAmount().compareTo(BigDecimal.ZERO) > 0) {
+                    String cpm = detail.getBooking() != null && detail.getBooking().getTruck() != null ? "—" : "—";
+                    // mileage rate from detail if available
+                    addLineItem.accept(new String[]{"Mileage Charge", "per mile", "—", "$" + s.getMileageAmount()});
+                }
+                if (s.getInsuranceCost() != null && s.getInsuranceCost().compareTo(BigDecimal.ZERO) > 0) {
+                    addLineItem.accept(new String[]{"Insurance", "—", "—", "$" + s.getInsuranceCost()});
+                }
+                if (s.getAdditionalServicesCost() != null && s.getAdditionalServicesCost().compareTo(BigDecimal.ZERO) > 0) {
+                    addLineItem.accept(new String[]{"Additional Services", "—", "—", "$" + s.getAdditionalServicesCost()});
+                }
+            } else {
+                addLineItem.accept(new String[]{"Rental Charge", "—", "—", "$" + nullSafe(detail.getTotal())});
+            }
+            doc.add(costTable);
+
+            // Total row
+            com.lowagie.text.pdf.PdfPTable totalTable = new com.lowagie.text.pdf.PdfPTable(2);
+            totalTable.setWidthPercentage(50);
+            totalTable.setHorizontalAlignment(com.lowagie.text.Element.ALIGN_RIGHT);
+            totalTable.setWidths(new float[]{50f, 50f});
+            totalTable.setSpacingAfter(16);
+
+            com.lowagie.text.pdf.PdfPCell totalLabelCell = new com.lowagie.text.pdf.PdfPCell(new com.lowagie.text.Phrase("TOTAL PAID", totalFont));
+            totalLabelCell.setBorder(com.lowagie.text.Rectangle.TOP);
+            totalLabelCell.setBorderColor(headerBg);
+            totalLabelCell.setPadding(6);
+            totalLabelCell.setHorizontalAlignment(com.lowagie.text.Element.ALIGN_LEFT);
+
+            String totalAmt = detail.getCombinedSummary() != null
+                    ? "$" + detail.getCombinedSummary().getTotalPaid()
+                    : "$" + nullSafe(detail.getTotal());
+            com.lowagie.text.pdf.PdfPCell totalAmtCell = new com.lowagie.text.pdf.PdfPCell(new com.lowagie.text.Phrase(totalAmt, totalFont));
+            totalAmtCell.setBorder(com.lowagie.text.Rectangle.TOP);
+            totalAmtCell.setBorderColor(headerBg);
+            totalAmtCell.setPadding(6);
+            totalAmtCell.setHorizontalAlignment(com.lowagie.text.Element.ALIGN_RIGHT);
+
+            totalTable.addCell(totalLabelCell);
+            totalTable.addCell(totalAmtCell);
+            doc.add(totalTable);
+
+            // ═══════════════════════════════════════════════════════
+            // SECTION 5 — Payment & Settlement Reference
+            // ═══════════════════════════════════════════════════════
+            doc.add(new com.lowagie.text.Paragraph("PAYMENT REFERENCE", sectionHead));
+            doc.add(com.lowagie.text.Chunk.NEWLINE);
+
+            com.lowagie.text.pdf.PdfPTable refTable = new com.lowagie.text.pdf.PdfPTable(2);
+            refTable.setWidthPercentage(100);
+            refTable.setWidths(new float[]{30f, 70f});
+            refTable.setSpacingAfter(12);
+
+            java.util.function.BiConsumer<String, String> addRefRow = (label, value) -> {
+                com.lowagie.text.pdf.PdfPCell lc = new com.lowagie.text.pdf.PdfPCell(new com.lowagie.text.Phrase(label, metaKey));
+                lc.setBorder(com.lowagie.text.Rectangle.BOTTOM);
+                lc.setBorderColor(dividerCol);
+                lc.setPadding(5);
+                com.lowagie.text.pdf.PdfPCell vc = new com.lowagie.text.pdf.PdfPCell(new com.lowagie.text.Phrase(value, bodyFont));
+                vc.setBorder(com.lowagie.text.Rectangle.BOTTOM);
+                vc.setBorderColor(dividerCol);
+                vc.setPadding(5);
+                refTable.addCell(lc);
+                refTable.addCell(vc);
+            };
+
+            addRefRow.accept("Transaction ID", nullSafe(detail.getTransactionId()));
+            addRefRow.accept("Payment Gateway", nullSafe(detail.getGateway()));
+            if (detail.getCardLast4() != null) {
+                addRefRow.accept("Card", "**** **** **** " + detail.getCardLast4());
+            }
+            addRefRow.accept("Settlement Status", nullSafe(detail.getDisplaySettlementStatus()));
+            if (detail.getBooking() != null && detail.getBooking().getOwner() != null) {
+                com.truckhire.modules.payment.dto.AdminInvoiceDetailResponse.OwnerInfo owner = detail.getBooking().getOwner();
+                if (owner.getSettlementId() != null) {
+                    addRefRow.accept("Settlement ID", owner.getSettlementId());
+                    addRefRow.accept("Settlement Date", fmtDate.apply(owner.getSettlementDate()));
+                }
+            }
+            doc.add(refTable);
+
+            // ═══════════════════════════════════════════════════════
+            // SECTION 6 — Footer
+            // ═══════════════════════════════════════════════════════
+            com.lowagie.text.pdf.PdfPTable footerDivider = new com.lowagie.text.pdf.PdfPTable(1);
+            footerDivider.setWidthPercentage(100);
+            footerDivider.setSpacingBefore(8);
+            footerDivider.setSpacingAfter(8);
+            com.lowagie.text.pdf.PdfPCell fd = new com.lowagie.text.pdf.PdfPCell();
+            fd.setBackgroundColor(dividerCol);
+            fd.setFixedHeight(1f);
+            fd.setBorder(com.lowagie.text.Rectangle.NO_BORDER);
+            footerDivider.addCell(fd);
+            doc.add(footerDivider);
+
+            com.lowagie.text.Paragraph footer1 = new com.lowagie.text.Paragraph(
+                    "Thank you for choosing TruckRental. For billing inquiries, contact support@truckhire.com", smallGray);
+            footer1.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+            doc.add(footer1);
+
+            com.lowagie.text.Paragraph footer2 = new com.lowagie.text.Paragraph(
+                    "This is a system-generated invoice. No signature required.  |  www.truckhire.com", smallGray);
+            footer2.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+            doc.add(footer2);
 
             doc.close();
             return out.toByteArray();
