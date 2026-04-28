@@ -558,8 +558,8 @@ public class BookingService {
      *
      * PENDING bookings (renter created but not yet paid) are excluded — the owner
      * should only see bookings once the renter has committed payment and the booking
-     * reaches AWAITING_APPROVAL. Date-conflict blocking is unaffected because
-     * existsConflictingBooking still includes PENDING.
+     * reaches AWAITING_APPROVAL. Date-conflict blocking only fires on AWAITING_APPROVAL+
+     * so PENDING bookings no longer prevent other renters from booking the same dates.
      */
     @Transactional(readOnly = true)
     public PagedResponse<BookingListResponse> getMyBookingsAsOwner(UUID ownerId, String statusFilter, Pageable pageable) {

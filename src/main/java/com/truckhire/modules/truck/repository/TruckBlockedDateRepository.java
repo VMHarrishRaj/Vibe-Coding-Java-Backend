@@ -15,6 +15,13 @@ public interface TruckBlockedDateRepository extends JpaRepository<TruckBlockedDa
 
     Optional<TruckBlockedDate> findByTruckIdAndBlockedDate(UUID truckId, LocalDate blockedDate);
 
+    // Batch: all blocked dates for a set of trucks within a date range — one query for fleet availability
+    @Query("SELECT tbd.truck.id, tbd.blockedDate FROM TruckBlockedDate tbd WHERE tbd.truck.id IN :truckIds AND tbd.blockedDate BETWEEN :from AND :to")
+    List<Object[]> findBlockedDatesByTruckIds(
+            @Param("truckIds") List<UUID> truckIds,
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to);
+
     // All blocked dates for a truck within a calendar month
     @Query("SELECT tbd.blockedDate FROM TruckBlockedDate tbd WHERE tbd.truck.id = :truckId AND tbd.blockedDate BETWEEN :from AND :to")
     List<LocalDate> findBlockedDatesBetween(

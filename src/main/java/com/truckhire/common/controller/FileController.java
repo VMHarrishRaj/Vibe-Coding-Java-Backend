@@ -48,12 +48,12 @@ public class FileController {
 
         // ── Access control ──
         if ("kyc".equalsIgnoreCase(category)) {
-            // KYC docs require authentication — OWNER can only access their own; ADMIN can access any
+            // KYC docs require authentication.
+            // ADMIN: can access all KYC docs.
+            // OWNER: can access any renter's KYC docs (needed to review renter before approving a booking).
+            // RENTER: blocked — renters have no business need to view KYC docs.
             User currentUser = SecurityUtils.getCurrentUser();
             String roleName = currentUser.getRole().getName();
-            if (Role.OWNER.equals(roleName) && !currentUser.getId().toString().equals(id)) {
-                throw new BusinessException("ACCESS_DENIED", "You can only access your own KYC documents");
-            }
             if (Role.RENTER.equals(roleName)) {
                 throw new BusinessException("ACCESS_DENIED", "Renters cannot access KYC documents");
             }

@@ -50,6 +50,12 @@ public class OwnerDashboardResponse {
     // Months with zero activity are omitted — frontend fills gaps as "No data available"
     private List<MonthlyRevenue> monthlyRevenue;
 
+    // ── Fleet availability this month ──
+    // One entry per truck: % of days in the current calendar month that the truck
+    // was available (not occupied by a booking or owner-blocked date).
+    // Sorted by truck name (make + model) for consistent ordering.
+    private List<TruckAvailability> fleetAvailability;
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -57,5 +63,19 @@ public class OwnerDashboardResponse {
     public static class MonthlyRevenue {
         private String month;        // "YYYY-MM" e.g. "2026-03"
         private BigDecimal revenue;  // owner's net earnings (ownerAmount) for that month
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class TruckAvailability {
+        private String truckId;
+        private String truckName;           // "{make} {model}" e.g. "Ford F-350"
+        private String registrationNumber;
+        private int totalDaysInMonth;
+        private int occupiedDays;           // booked + owner-blocked (de-duplicated)
+        private int availableDays;          // totalDaysInMonth - occupiedDays
+        private int availabilityPercent;    // 0–100, rounded to nearest integer
     }
 }

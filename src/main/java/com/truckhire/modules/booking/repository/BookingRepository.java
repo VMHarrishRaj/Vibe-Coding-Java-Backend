@@ -20,15 +20,16 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 
     /**
      * Date overlap conflict check — blocks double-booking.
-     * A conflict exists when the truck has an active booking (PENDING, CONFIRMED, or ACTIVE)
-     * whose date range overlaps the requested range.
+     * Only bookings in AWAITING_APPROVAL, CONFIRMED, or ACTIVE block dates.
+     * PENDING (not yet paid) is excluded — a renter who hasn't paid should not
+     * prevent other renters from selecting the same dates.
      *
      * Overlap condition: existing.startDate <= requested.endDate AND existing.endDate >= requested.startDate
      */
     @Query("""
             SELECT COUNT(b) > 0 FROM Booking b
             WHERE b.truck.id = :truckId
-              AND b.status IN ('PENDING', 'AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE')
+              AND b.status IN ('AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE')
               AND b.startDate <= :endDate
               AND b.endDate >= :startDate
             """)
@@ -44,7 +45,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             SELECT COUNT(b) > 0 FROM Booking b
             WHERE b.truck.id = :truckId
               AND b.id != :excludeBookingId
-              AND b.status IN ('PENDING', 'AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE')
+              AND b.status IN ('AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE')
               AND b.startDate <= :endDate
               AND b.endDate >= :startDate
             """)
@@ -53,6 +54,24 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate,
             @Param("excludeBookingId") UUID excludeBookingId);
+
+    /**
+     * Fleet availability: for a set of truck IDs, return all bookings whose date range
+     * overlaps the given month window [monthStart, monthEnd].
+     * Used by getDashboard to compute per-truck availability % for the current month.
+     * Only confirmed/active bookings count as occupied — PENDING and CANCELLED do not.
+     */
+    @Query("""
+            SELECT b FROM Booking b
+            WHERE b.truck.id IN :truckIds
+              AND b.status IN ('AWAITING_APPROVAL', 'CONFIRMED', 'ACTIVE', 'COMPLETED')
+              AND b.startDate <= :monthEnd
+              AND b.endDate >= :monthStart
+            """)
+    List<Booking> findBookingsForTrucksInMonth(
+            @Param("truckIds") List<UUID> truckIds,
+            @Param("monthStart") LocalDateTime monthStart,
+            @Param("monthEnd") LocalDateTime monthEnd);
 
     /**
      * Find CONFIRMED or ACTIVE bookings for a set of truck IDs where the booking

@@ -984,9 +984,7 @@ public class PaymentService {
                 .total(txn.getAmount())
                 .ownerShare(txn.getOwnerAmount())
                 .platformShare(txn.getPlatformFee())
-                .ownerSharePercent(txn.getPlatformFee() != null
-                        ? java.math.BigDecimal.valueOf(100).subtract(settings.getPlatformFeePercent())
-                        : null)
+                .ownerSharePercent(java.math.BigDecimal.valueOf(100).subtract(settings.getPlatformFeePercent()))
                 .platformFeePercent(settings.getPlatformFeePercent())
                 .transactionId(txn.getGatewayPaymentId())
                 .paymentMethod(txn.getPaymentMethod())
@@ -1364,9 +1362,24 @@ public class PaymentService {
                         .ifPresent(charge -> builder.grossAmount(charge.getAmount()));
             }
 
-            // platformFeePercent — from current platform settings
+            // platformFeePercent + absolute platformFee — always from current platform settings.
+            // platformFee = grossAmount * (feePercent / 100), giving the owner the exact $ deducted.
             PlatformSettings settings = platformSettingsService.getSettings();
             builder.platformFeePercent(settings.getPlatformFeePercent());
+
+            // Use the stored platformFee on the PAYOUT transaction if already settled;
+            // otherwise compute it live from grossAmount so it's always present pre-payout.
+            if (txn.getPlatformFee() != null) {
+                builder.platformFee(txn.getPlatformFee());
+            } else {
+                BigDecimal gross = builder.build().getGrossAmount();
+                if (gross != null) {
+                    BigDecimal fee = gross
+                            .multiply(settings.getPlatformFeePercent())
+                            .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+                    builder.platformFee(fee);
+                }
+            }
         }
 
         return builder.build();
