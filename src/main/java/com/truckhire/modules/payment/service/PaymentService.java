@@ -210,7 +210,7 @@ public class PaymentService {
      * Handles Stripe webhook event: payment_intent.succeeded
      */
     @Transactional
-    public void handleStripeWebhook(String paymentIntentId) {
+    public void handleStripeWebhook(String paymentIntentId, String latestChargeId) {
         transactionRepository.findByGatewayOrderId(paymentIntentId).ifPresent(txn -> {
             if (txn.getStatus() == PaymentStatus.SUCCEEDED) {
                 log.debug("Stripe webhook: already SUCCEEDED, skipping. piId={}", paymentIntentId);
@@ -218,6 +218,27 @@ public class PaymentService {
             }
             txn.setStatus(PaymentStatus.SUCCEEDED);
             txn.setGatewayPaymentId(paymentIntentId);
+
+            // Best-effort: retrieve the Charge to extract card details.
+            // Failure here must never block booking confirmation — catch and log only.
+            if (latestChargeId != null) {
+                try {
+                    com.stripe.model.Charge charge = stripeAdapter.retrieveCharge(latestChargeId);
+                    if (charge != null && charge.getPaymentMethodDetails() != null
+                            && charge.getPaymentMethodDetails().getCard() != null) {
+                        com.stripe.model.Charge.PaymentMethodDetails.Card card =
+                                charge.getPaymentMethodDetails().getCard();
+                        if (card.getLast4() != null) txn.setCardLast4(card.getLast4());
+                        if (card.getBrand() != null) txn.setPaymentMethod(card.getBrand());
+                        log.debug("Stripe webhook: card details captured — brand={}, last4={}",
+                                card.getBrand(), card.getLast4());
+                    }
+                } catch (Exception e) {
+                    log.warn("Stripe webhook: could not retrieve charge for card details. chargeId={}, reason={}",
+                            latestChargeId, e.getMessage());
+                }
+            }
+
             transactionRepository.save(txn);
 
             // Only CHARGE triggers booking confirmation (PENDING -> AWAITING_APPROVAL).
