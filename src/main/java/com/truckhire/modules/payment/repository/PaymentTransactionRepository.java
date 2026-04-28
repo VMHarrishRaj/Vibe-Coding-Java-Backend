@@ -48,6 +48,25 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             countQuery = "SELECT COUNT(t) FROM PaymentTransaction t JOIN t.booking b WHERE t.type IN ('CHARGE', 'MILEAGE_TOPUP') AND t.status NOT IN ('CANCELLED', 'REFUNDED')")
     Page<PaymentTransaction> findAllChargesWithDetails(Pageable pageable);
 
+    // Admin: all CHARGE/MILEAGE_TOPUP transactions for a specific renter
+    @Query(value = """
+            SELECT t FROM PaymentTransaction t
+            JOIN FETCH t.booking b
+            JOIN FETCH b.renter r
+            WHERE r.id = :renterId
+              AND t.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND t.status NOT IN ('CANCELLED', 'REFUNDED')
+            ORDER BY t.createdAt DESC
+            """,
+            countQuery = """
+            SELECT COUNT(t) FROM PaymentTransaction t
+            JOIN t.booking b JOIN b.renter r
+            WHERE r.id = :renterId
+              AND t.type IN ('CHARGE', 'MILEAGE_TOPUP')
+              AND t.status NOT IN ('CANCELLED', 'REFUNDED')
+            """)
+    Page<PaymentTransaction> findChargesByRenterId(@Param("renterId") UUID renterId, Pageable pageable);
+
     @Query(value = """
             SELECT t FROM PaymentTransaction t
             JOIN FETCH t.booking b

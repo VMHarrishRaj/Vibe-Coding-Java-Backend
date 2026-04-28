@@ -32,6 +32,7 @@ import org.springframework.data.domain.Sort;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,17 +40,15 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Truck Service — business logic for truck CRUD, photo uploads, and admin
- * approval.
+ * Truck Service — business logic for truck CRUD, photo uploads, and availability.
  *
  * CRITICAL BUSINESS RULES:
  * 1. Only KYC-verified owners can add/manage trucks
- * 2. New trucks start as PENDING_APPROVAL
- * 3. Only APPROVED trucks are visible to renters in search
- * 4. When owner uploads new photos to an APPROVED truck, status reverts to
- * PENDING_APPROVAL
- * 5. Only the truck owner can edit/delete their own trucks
- * 6. Admin can approve/reject trucks
+ * 2. New trucks start as AVAILABLE immediately
+ * 3. Owner can toggle truck to UNAVAILABLE (maintenance) via deactivate endpoint
+ * 4. Admin suspending an owner sets their AVAILABLE trucks to UNAVAILABLE (suspendedByAdmin=true)
+ * 5. Admin re-activating owner restores those trucks to AVAILABLE
+ * 6. Only the truck owner can edit/delete their own trucks
  */
 @Slf4j
 @Service
@@ -121,7 +120,7 @@ public class TruckService {
                 .fuelType(request.getFuelType())
                 .vinNumber(request.getVinNumber())
                 .transmission(request.getTransmission())
-                .status(TruckStatus.PENDING_APPROVAL)
+                .status(TruckStatus.AVAILABLE)
                 .build();
 
         // Add pickup locations if provided
@@ -244,21 +243,45 @@ public class TruckService {
     }
 
     /**
-     * Deactivate an APPROVED truck (owner only).
-     * Only APPROVED trucks can be deactivated — PENDING/REJECTED stay as-is.
+     * Set a truck to UNAVAILABLE (maintenance). Only AVAILABLE trucks can be deactivated.
      */
     @Transactional
     public void deactivateTruck(UUID ownerId, UUID truckId) {
         Truck truck = findTruckOwnedBy(truckId, ownerId);
 
-        if (truck.getStatus() != TruckStatus.APPROVED) {
-            throw new BusinessException("TRUCK_NOT_APPROVED",
-                    "Only APPROVED trucks can be deactivated");
+        if (truck.getStatus() != TruckStatus.AVAILABLE) {
+            throw new BusinessException("TRUCK_NOT_AVAILABLE",
+                    "Only available trucks can be set to maintenance");
         }
 
-        truck.setStatus(TruckStatus.INACTIVE);
+        truck.setStatus(TruckStatus.UNAVAILABLE);
         truckRepository.save(truck);
-        log.info("Truck deactivated: id={}, owner={}", truckId, ownerId);
+        log.info("Truck set to maintenance: id={}, owner={}", truckId, ownerId);
+    }
+
+    /**
+     * Bring a truck back from maintenance (UNAVAILABLE → AVAILABLE).
+     * Only trucks the owner manually deactivated can be reactivated this way.
+     * Trucks set UNAVAILABLE by an admin suspension (suspendedByAdmin=true) can only
+     * be restored by the admin re-activating the owner account.
+     */
+    @Transactional
+    public void reactivateTruck(UUID ownerId, UUID truckId) {
+        Truck truck = findTruckOwnedBy(truckId, ownerId);
+
+        if (truck.getStatus() != TruckStatus.UNAVAILABLE) {
+            throw new BusinessException("TRUCK_NOT_UNAVAILABLE",
+                    "Truck is already available");
+        }
+
+        if (truck.isSuspendedByAdmin()) {
+            throw new BusinessException("TRUCK_SUSPENDED_BY_ADMIN",
+                    "This truck was suspended by an admin. Contact support to reactivate your account.");
+        }
+
+        truck.setStatus(TruckStatus.AVAILABLE);
+        truckRepository.save(truck);
+        log.info("Truck reactivated from maintenance: id={}, owner={}", truckId, ownerId);
     }
 
     /**
@@ -274,16 +297,12 @@ public class TruckService {
 
     /**
      * Upload a truck photo/document.
-     *
-     * IMPORTANT: If the truck is currently APPROVED, uploading new photos
-     * reverts status to PENDING_APPROVAL so admin can re-verify.
      */
     @Transactional
     public TruckDocumentResponse uploadTruckPhoto(UUID ownerId, UUID truckId,
             String documentType, MultipartFile file) {
         Truck truck = findTruckOwnedBy(truckId, ownerId);
 
-        // Default document type to PHOTO if not specified
         String docTypeName = (documentType != null) ? documentType.toUpperCase() : "PHOTO";
 
         DocumentType docType = documentTypeRepository
@@ -291,7 +310,6 @@ public class TruckService {
                 .orElseThrow(() -> new BusinessException("INVALID_DOCUMENT_TYPE",
                         "Invalid vehicle document type: " + docTypeName));
 
-        // Store file: uploads/trucks/{truckId}/{uuid}_filename.jpg
         String subDirectory = "trucks/" + truckId;
         String filePath = fileStorageService.storeFile(file, subDirectory);
 
@@ -302,13 +320,6 @@ public class TruckService {
                 .build();
 
         TruckDocument saved = truckDocumentRepository.save(document);
-
-        // If truck was APPROVED, revert to PENDING_APPROVAL for re-review
-        if (truck.getStatus() == TruckStatus.APPROVED) {
-            truck.setStatus(TruckStatus.PENDING_APPROVAL);
-            truckRepository.save(truck);
-            log.info("Truck status reverted to PENDING_APPROVAL after photo upload: id={}", truckId);
-        }
 
         log.info("Truck photo uploaded: truckId={}, docType={}, path={}",
                 truckId, docTypeName, filePath);
@@ -344,15 +355,13 @@ public class TruckService {
 
         // ── Truck counts ──
         List<Object[]> truckRows = truckRepository.countTrucksByStatusForOwner(ownerId);
-        long approved = 0, pending = 0, rejected = 0, inactive = 0;
+        long available = 0, unavailable = 0;
         for (Object[] row : truckRows) {
             TruckStatus status = (TruckStatus) row[0];
             long count = (long) row[1];
             switch (status) {
-                case APPROVED         -> approved = count;
-                case PENDING_APPROVAL -> pending = count;
-                case REJECTED         -> rejected = count;
-                case INACTIVE         -> inactive = count;
+                case AVAILABLE   -> available = count;
+                case UNAVAILABLE -> unavailable = count;
             }
         }
 
@@ -401,11 +410,9 @@ public class TruckService {
                 .profileImageUrl(owner.getProfileImageUrl())
                 .stripeConnected(owner.getStripeAccountId() != null && !owner.getStripeAccountId().isBlank())
                 // trucks
-                .totalTrucks(approved + pending + rejected + inactive)
-                .approvedTrucks(approved)
-                .pendingTrucks(pending)
-                .rejectedTrucks(rejected)
-                .inactiveTrucks(inactive)
+                .totalTrucks(available + unavailable)
+                .availableTrucks(available)
+                .unavailableTrucks(unavailable)
                 // bookings
                 .awaitingApprovalBookings(awaitingApproval)
                 .confirmedBookings(confirmed)
@@ -428,12 +435,11 @@ public class TruckService {
     /**
      * Search/browse trucks (public).
      *
-     * Returns APPROVED, INACTIVE, and PENDING_APPROVAL trucks (REJECTED are hidden).
+     * Returns AVAILABLE and UNAVAILABLE trucks.
      * After fetching the page, availability is enriched in one extra batch query:
-     * - APPROVED + no active/upcoming booking → "AVAILABLE"
-     * - APPROVED + CONFIRMED/ACTIVE booking today or future → "RENTED" + rentedUntil
-     * - INACTIVE → "UNAVAILABLE" (deactivated by owner)
-     * - PENDING_APPROVAL → "UNAVAILABLE" (pending admin review)
+     * - AVAILABLE + no active/upcoming booking → "AVAILABLE"
+     * - AVAILABLE + CONFIRMED/ACTIVE booking today or future → "RENTED" + rentedUntil
+     * - UNAVAILABLE → "UNAVAILABLE" (maintenance or owner suspended)
      *
      * This is one extra query per page — not N+1.
      *
@@ -445,7 +451,7 @@ public class TruckService {
             String city, String vehicleType,
             BigDecimal minPrice, BigDecimal maxPrice,
             Integer minCapacity, String sortBy,
-            LocalDate availableFrom, LocalDate availableTo,
+            LocalDateTime availableFrom, LocalDateTime availableTo,
             Boolean insured,
             Pageable pageable) {
 
@@ -456,7 +462,7 @@ public class TruckService {
                     "Both availableFrom and availableTo must be provided together");
         }
         if (availableFrom != null) {
-            if (availableFrom.isBefore(LocalDate.now())) {
+            if (availableFrom.isBefore(LocalDateTime.now())) {
                 throw new BusinessException("INVALID_DATE_RANGE",
                         "availableFrom cannot be in the past");
             }
@@ -476,8 +482,8 @@ public class TruckService {
         if (availableFrom != null) {
             page = truckRepository.searchPublicTrucksWithDates(
                     cityLower, vehicleTypeNorm, minPrice, maxPrice, minCapacity,
-                    insured, availableFrom.atStartOfDay(), availableTo.atStartOfDay(),
-                    availableFrom, availableTo, sortedPageable);
+                    insured, availableFrom, availableTo,
+                    availableFrom.toLocalDate(), availableTo.toLocalDate(), sortedPageable);
         } else {
             page = truckRepository.searchPublicTrucks(
                     cityLower, vehicleTypeNorm, minPrice, maxPrice, minCapacity,
@@ -775,19 +781,16 @@ public class TruckService {
 
     /**
      * Admin: List all trucks, optionally filtered by status, vehicleType, and/or free-text keyword.
-     * q searches: registrationNumber, model, make, owner name (case-insensitive LIKE).
-     * vehicleType: MINI / STANDARD / HEAVY (case-insensitive; matched against vehicleType.name).
+     *
+     * status accepts both raw enum names (AVAILABLE, UNAVAILABLE) and UI display labels
+     * (Available, Rented, Not Available). "Available" and "Rented" both resolve to AVAILABLE
+     * at the DB level since RENTED is a computed state from bookings.
      */
     @Transactional(readOnly = true)
     public PagedResponse<TruckListResponse> getAllTrucks(String status, String vehicleType, String q, Pageable pageable) {
-        TruckStatus truckStatus = null;
-        if (status != null && !status.isBlank()) {
-            try {
-                truckStatus = TruckStatus.valueOf(status.toUpperCase());
-            } catch (IllegalArgumentException e) {
-                // Unrecognized status — treat as no filter rather than erroring.
-            }
-        }
+        // Resolve status param to a set of TruckStatus values.
+        // Returns null (no filter), a single-element list, or a multi-element list.
+        List<TruckStatus> statusFilter = resolveAdminStatusFilter(status);
 
         String normalizedVehicleType = (vehicleType != null && !vehicleType.isBlank())
                 ? vehicleType.toUpperCase().trim()
@@ -797,7 +800,9 @@ public class TruckService {
                 ? "%" + q.toLowerCase().trim() + "%"
                 : null;
 
-        boolean hasStatus = truckStatus != null;
+        boolean hasStatus = statusFilter != null;
+        boolean multiStatus = hasStatus && statusFilter.size() > 1;
+        TruckStatus singleStatus = (hasStatus && !multiStatus) ? statusFilter.get(0) : null;
         boolean hasVehicleType = normalizedVehicleType != null;
         boolean hasKeyword = keyword != null;
 
@@ -805,69 +810,56 @@ public class TruckService {
         if (!hasStatus && !hasVehicleType && !hasKeyword) {
             page = truckRepository.findAllActiveWithOwner(pageable);
         } else if (hasStatus && !hasVehicleType && !hasKeyword) {
-            page = truckRepository.findByStatusActiveWithOwnerNoOrder(truckStatus, pageable);
+            page = multiStatus
+                    ? truckRepository.findByStatusesActiveWithOwner(statusFilter, pageable)
+                    : truckRepository.findByStatusActiveWithOwnerNoOrder(singleStatus, pageable);
         } else if (!hasStatus && hasVehicleType && !hasKeyword) {
             page = truckRepository.findByVehicleTypeNameAndDeletedAtIsNull(normalizedVehicleType, pageable);
         } else if (hasStatus && hasVehicleType && !hasKeyword) {
-            page = truckRepository.findByStatusAndVehicleType(truckStatus, normalizedVehicleType, pageable);
+            page = multiStatus
+                    ? truckRepository.findByStatusesAndVehicleType(statusFilter, normalizedVehicleType, pageable)
+                    : truckRepository.findByStatusAndVehicleType(singleStatus, normalizedVehicleType, pageable);
         } else if (!hasStatus && !hasVehicleType && hasKeyword) {
             page = truckRepository.searchByKeyword(keyword, pageable);
         } else if (hasStatus && !hasVehicleType && hasKeyword) {
-            page = truckRepository.searchByKeywordAndStatus(keyword, truckStatus, pageable);
+            page = multiStatus
+                    ? truckRepository.searchByKeywordAndStatuses(keyword, statusFilter, pageable)
+                    : truckRepository.searchByKeywordAndStatus(keyword, singleStatus, pageable);
         } else if (!hasStatus && hasVehicleType && hasKeyword) {
             page = truckRepository.searchByKeywordAndVehicleType(keyword, normalizedVehicleType, pageable);
         } else {
             // hasStatus && hasVehicleType && hasKeyword
-            page = truckRepository.searchByKeywordAndStatusAndVehicleType(keyword, truckStatus, normalizedVehicleType, pageable);
+            page = multiStatus
+                    ? truckRepository.searchByKeywordAndStatusesAndVehicleType(keyword, statusFilter, normalizedVehicleType, pageable)
+                    : truckRepository.searchByKeywordAndStatusAndVehicleType(keyword, singleStatus, normalizedVehicleType, pageable);
         }
         return buildPagedResponseWithAvailability(page);
     }
 
     /**
-     * Admin: List pending-approval trucks.
+     * Map the admin status filter param to a list of TruckStatus enum values.
+     * Accepts raw enum names and UI display labels interchangeably.
+     * Returns null when no filter should be applied.
      */
-    @Transactional(readOnly = true)
-    public PagedResponse<TruckListResponse> getPendingTrucks(Pageable pageable) {
-        Page<Truck> page = truckRepository.findByStatusActiveWithOwner(
-                TruckStatus.PENDING_APPROVAL, pageable);
-        return buildPagedResponseWithAvailability(page);
+    private List<TruckStatus> resolveAdminStatusFilter(String status) {
+        if (status == null || status.isBlank()) return null;
+
+        String normalized = status.trim();
+
+        return switch (normalized.toLowerCase()) {
+            case "available"     -> List.of(TruckStatus.AVAILABLE);
+            case "rented"        -> List.of(TruckStatus.AVAILABLE);
+            case "not available" -> List.of(TruckStatus.UNAVAILABLE);
+            default -> {
+                try {
+                    yield List.of(TruckStatus.valueOf(normalized.toUpperCase()));
+                } catch (IllegalArgumentException e) {
+                    yield null;
+                }
+            }
+        };
     }
 
-    /**
-     * Admin: Approve a truck.
-     */
-    @Transactional
-    public void approveTruck(UUID truckId, UUID adminId) {
-        Truck truck = truckRepository.findByIdAndDeletedAtIsNull(truckId)
-                .orElseThrow(() -> new ResourceNotFoundException("Truck", "id", truckId));
-
-        if (truck.getStatus() == TruckStatus.APPROVED) {
-            throw new BusinessException("ALREADY_APPROVED", "Truck is already approved");
-        }
-
-        truck.setStatus(TruckStatus.APPROVED);
-        truckRepository.save(truck);
-        log.info("Truck approved: id={}, by adminId={}", truckId, adminId);
-    }
-
-    /**
-     * Admin: Reject a truck.
-     */
-    @Transactional
-    public void rejectTruck(UUID truckId, UUID adminId, String reason) {
-        Truck truck = truckRepository.findByIdAndDeletedAtIsNull(truckId)
-                .orElseThrow(() -> new ResourceNotFoundException("Truck", "id", truckId));
-
-        if (truck.getStatus() == TruckStatus.REJECTED) {
-            throw new BusinessException("ALREADY_REJECTED", "Truck is already rejected");
-        }
-
-        truck.setStatus(TruckStatus.REJECTED);
-        truck.setRejectionReason(reason);
-        truckRepository.save(truck);
-        log.info("Truck rejected: id={}, by adminId={}, reason={}",
-                truckId, adminId, reason);
-    }
 
     // ═══════════════════════════════════════
     // PRIVATE HELPERS
@@ -954,7 +946,6 @@ public class TruckService {
                 .fuelType(truck.getFuelType() != null ? truck.getFuelType().name() : null)
                 .transmission(truck.getTransmission())
                 .status(truck.getStatus().name())
-                .rejectionReason(truck.getRejectionReason())
                 .description(truck.getDescription())
                 .insured(truck.isInsured())
                 .createdAt(truck.getCreatedAt() != null ? truck.getCreatedAt().toString() : null)
@@ -967,7 +958,7 @@ public class TruckService {
 
         // Availability enrichment — same logic as enrichAvailability() for TruckListResponse
         switch (truck.getStatus()) {
-            case APPROVED -> {
+            case AVAILABLE -> {
                 if (activeBooking == null) {
                     builder.availabilityStatus("AVAILABLE");
                 } else {
@@ -981,15 +972,10 @@ public class TruckService {
                             .build());
                 }
             }
-            case INACTIVE -> {
+            case UNAVAILABLE -> {
                 builder.availabilityStatus("UNAVAILABLE");
-                builder.unavailableReason("Deactivated by owner");
+                builder.unavailableReason("Not available");
             }
-            case PENDING_APPROVAL -> {
-                builder.availabilityStatus("UNAVAILABLE");
-                builder.unavailableReason("Pending approval");
-            }
-            default -> builder.availabilityStatus("UNAVAILABLE");
         }
 
         return builder.build();
@@ -1078,10 +1064,9 @@ public class TruckService {
      *
      * After fetching the page, one batch query fetches all CONFIRMED/ACTIVE bookings
      * for the truck IDs on this page. Then each truck is annotated:
-     * - APPROVED + no booking → AVAILABLE
-     * - APPROVED + booking → RENTED (rentedUntil = booking.endDate)
-     * - INACTIVE → UNAVAILABLE (deactivated)
-     * - PENDING_APPROVAL → UNAVAILABLE (pending review)
+     * - AVAILABLE + no booking → Available
+     * - AVAILABLE + booking    → Rented (rentedUntil = booking.endDate)
+     * - UNAVAILABLE            → Not Available (maintenance or admin-suspended)
      */
     private PagedResponse<TruckListResponse> buildPagedResponseWithAvailability(Page<Truck> page) {
         List<UUID> truckIds = page.getContent().stream()
@@ -1141,7 +1126,7 @@ public class TruckService {
      */
     private void enrichAvailability(TruckListResponse response, Truck truck, Booking activeBooking) {
         switch (truck.getStatus()) {
-            case APPROVED -> {
+            case AVAILABLE -> {
                 if (activeBooking == null) {
                     response.setAvailabilityStatus("AVAILABLE");
                     response.setDisplayStatus("Available");
@@ -1151,19 +1136,10 @@ public class TruckService {
                     response.setRentedUntil(activeBooking.getEndDate().toString());
                 }
             }
-            case INACTIVE -> {
+            case UNAVAILABLE -> {
                 response.setAvailabilityStatus("UNAVAILABLE");
                 response.setDisplayStatus("Not Available");
-                response.setUnavailableReason("Deactivated by owner");
-            }
-            case PENDING_APPROVAL -> {
-                response.setAvailabilityStatus("UNAVAILABLE");
-                response.setDisplayStatus("Not Available");
-                response.setUnavailableReason("Pending approval");
-            }
-            default -> {
-                response.setAvailabilityStatus("UNAVAILABLE");
-                response.setDisplayStatus("Not Available");
+                response.setUnavailableReason("Not available");
             }
         }
     }

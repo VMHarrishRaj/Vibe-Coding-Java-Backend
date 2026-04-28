@@ -121,7 +121,7 @@ public class BookingService {
         Truck truck = truckRepository.findByIdAndDeletedAtIsNull(request.getTruckId())
                 .orElseThrow(() -> new ResourceNotFoundException("Truck", "id", request.getTruckId()));
 
-        if (truck.getStatus() != TruckStatus.APPROVED) {
+        if (truck.getStatus() != TruckStatus.AVAILABLE) {
             throw new BusinessException("TRUCK_NOT_AVAILABLE",
                     "This truck is not available for booking");
         }
@@ -452,6 +452,44 @@ public class BookingService {
 
         log.info("Booking cancelled by admin: id={}, adminId={}", bookingId, adminId);
         return mapToFullResponse(saved);
+    }
+
+    /**
+     * Admin: renter detail page — booking statistics + paginated booking list for a specific renter.
+     */
+    @Transactional(readOnly = true)
+    public com.truckhire.modules.user.dto.RenterBookingSummaryResponse getAdminRenterBookings(
+            UUID renterId, Pageable pageable) {
+
+        // Validate renter exists
+        userRepository.findById(renterId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", renterId));
+
+        // Stats — one query; native query returns List<Object[]>, take first (and only) row
+        List<Object[]> statsRows = bookingRepository.getRenterBookingStats(renterId);
+        Object[] stats = statsRows.isEmpty() ? new Object[4] : statsRows.get(0);
+        long totalBookings = stats[0] != null ? ((Number) stats[0]).longValue() : 0L;
+        java.math.BigDecimal totalSpent = stats[1] != null ? new java.math.BigDecimal(stats[1].toString()) : java.math.BigDecimal.ZERO;
+        long completedCount = stats[2] != null ? ((Number) stats[2]).longValue() : 0L;
+        String lastBookingDate = stats[3] != null ? stats[3].toString() : null;
+
+        java.math.BigDecimal avgBookingValue = completedCount > 0
+                ? totalSpent.divide(java.math.BigDecimal.valueOf(completedCount), 2, java.math.RoundingMode.HALF_UP)
+                : null;
+
+        // Paginated list
+        Page<Booking> page = bookingRepository.findByRenterIdOrderByCreatedAtDesc(renterId, pageable);
+        PagedResponse<BookingListResponse> bookings = buildListPagedResponse(page);
+
+        return com.truckhire.modules.user.dto.RenterBookingSummaryResponse.builder()
+                .stats(com.truckhire.modules.user.dto.RenterBookingSummaryResponse.Stats.builder()
+                        .totalBookings(totalBookings)
+                        .totalSpent(totalSpent)
+                        .avgBookingValue(avgBookingValue)
+                        .lastBookingDate(lastBookingDate)
+                        .build())
+                .bookings(bookings)
+                .build();
     }
 
     /**

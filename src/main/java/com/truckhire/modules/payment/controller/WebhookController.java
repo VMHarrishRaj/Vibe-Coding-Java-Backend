@@ -130,15 +130,16 @@ public class WebhookController {
         log.info("Stripe webhook received: type={}, id={}", event.getType(), event.getId());
 
         if ("payment_intent.succeeded".equals(event.getType())) {
-            String paymentIntentId = extractPaymentIntentId(event);
-            if (paymentIntentId != null) {
+            StripePaymentDetails details = extractPaymentDetails(event);
+            if (details.paymentIntentId() != null) {
                 try {
-                    paymentService.handleStripeWebhook(paymentIntentId);
+                    paymentService.handleStripeWebhook(
+                            details.paymentIntentId(), details.latestChargeId());
                 } catch (Exception e) {
                     // Log but still return 200 — Stripe retries on any non-2xx response,
                     // which would cause duplicate processing. Log the error for investigation.
                     log.error("Stripe webhook: error processing payment_intent.succeeded for piId={}: {}",
-                            paymentIntentId, e.getMessage(), e);
+                            details.paymentIntentId(), e.getMessage(), e);
                 }
             } else {
                 log.error("Stripe webhook: could not extract PaymentIntent ID from event {}", event.getId());
@@ -149,14 +150,21 @@ public class WebhookController {
         return ResponseEntity.ok("");
     }
 
+    // paymentIntentId — the pi_xxx ID used to look up the transaction
+    // latestChargeId  — ch_xxx from pi.latest_charge; passed to service to retrieve card details
+    private record StripePaymentDetails(String paymentIntentId, String latestChargeId) {}
+
     /**
-     * Extracts the PaymentIntent ID from a Stripe event using the three-tier pattern.
+     * Extracts PaymentIntent ID and latest charge ID from a Stripe event using the three-tier pattern.
      *
      * Tier 1: getObject() — exact API version match (ideal path)
      * Tier 2: deserializeUnsafe() — version mismatch but fields are compatible (common with Stripe CLI)
-     * Tier 3: raw JSON — parse the id field directly from event data JSON (last resort)
+     * Tier 3: raw JSON — extract id and latest_charge directly from the raw JSON (last resort)
+     *
+     * latestChargeId is best-effort — may be null in older webhook events.
+     * It is never required for booking confirmation — only used to fetch card details.
      */
-    private String extractPaymentIntentId(Event event) {
+    private StripePaymentDetails extractPaymentDetails(Event event) {
         EventDataObjectDeserializer deserializer = event.getDataObjectDeserializer();
 
         // Tier 1: versions match exactly
@@ -164,7 +172,7 @@ public class WebhookController {
             StripeObject obj = deserializer.getObject().get();
             if (obj instanceof PaymentIntent pi) {
                 log.debug("Stripe webhook: deserialized via Tier 1 (exact version match)");
-                return pi.getId();
+                return new StripePaymentDetails(pi.getId(), pi.getLatestCharge());
             }
         }
 
@@ -173,20 +181,22 @@ public class WebhookController {
             StripeObject obj = deserializer.deserializeUnsafe();
             if (obj instanceof PaymentIntent pi) {
                 log.debug("Stripe webhook: deserialized via Tier 2 (deserializeUnsafe)");
-                return pi.getId();
+                return new StripePaymentDetails(pi.getId(), pi.getLatestCharge());
             }
         } catch (EventDataObjectDeserializationException e) {
             log.warn("Stripe webhook: Tier 2 deserialization failed, falling back to raw JSON. Reason: {}",
                     e.getMessage());
 
-            // Tier 3: raw JSON — extract just the "id" field we need
+            // Tier 3: raw JSON — extract id and latest_charge directly
             try {
                 String rawJson = e.getRawJson();
                 if (rawJson != null) {
-                    String id = new JSONObject(rawJson).optString("id", null);
+                    JSONObject obj = new JSONObject(rawJson);
+                    String id = obj.optString("id", null);
+                    String chargeId = obj.optString("latest_charge", null);
                     if (id != null && !id.isBlank()) {
                         log.debug("Stripe webhook: extracted ID via Tier 3 (raw JSON)");
-                        return id;
+                        return new StripePaymentDetails(id, chargeId);
                     }
                 }
             } catch (Exception jsonEx) {
@@ -194,6 +204,6 @@ public class WebhookController {
             }
         }
 
-        return null;
+        return new StripePaymentDetails(null, null);
     }
 }

@@ -87,6 +87,18 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     // Renter's bookings filtered by status
     Page<Booking> findByRenterIdAndStatusOrderByCreatedAtDesc(UUID renterId, BookingStatus status, Pageable pageable);
 
+    // Admin: renter booking stats — [totalBookings, totalSpent, completedCount, lastBookingDate]
+    @Query(value = """
+            SELECT COUNT(b.id),
+                   COALESCE(SUM(CASE WHEN b.status = 'COMPLETED' THEN b.total_amount ELSE 0 END), 0),
+                   SUM(CASE WHEN b.status = 'COMPLETED' THEN 1 ELSE 0 END),
+                   MAX(b.created_at)
+            FROM bookings b
+            WHERE b.renter_id = :renterId
+              AND b.deleted_at IS NULL
+            """, nativeQuery = true)
+    List<Object[]> getRenterBookingStats(@Param("renterId") UUID renterId);
+
     // Owner's bookings (paginated, newest first) — excludes PENDING (unpaid) bookings.
     // Renter has not yet paid for PENDING bookings so the owner should not see them yet.
     // Date-conflict blocking still works because existsConflictingBooking includes PENDING.

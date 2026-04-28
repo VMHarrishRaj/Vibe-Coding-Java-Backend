@@ -3,6 +3,7 @@ package com.truckhire.modules.payment.gateway;
 import com.stripe.StripeClient;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Account;
+import com.stripe.model.Charge;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.AccountLink;
 import com.stripe.param.AccountCreateParams;
@@ -278,6 +279,19 @@ public class StripeGatewayAdapter implements GatewayPort {
             log.error("Stripe account retrieve failed: accountId={}, error={}", stripeAccountId, e.getMessage());
             throw new BusinessException("PAYMENT_GATEWAY_ERROR",
                     "Failed to verify Stripe account status: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Retrieve a Stripe Charge by ID to extract card details (brand, last4).
+     * Returns null on any error — callers must treat this as best-effort.
+     */
+    public Charge retrieveCharge(String chargeId) {
+        try {
+            return client().charges().retrieve(chargeId);
+        } catch (StripeException e) {
+            log.warn("Stripe retrieveCharge failed: chargeId={}, error={}", chargeId, e.getMessage());
+            return null;
         }
     }
 

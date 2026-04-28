@@ -220,13 +220,13 @@ public class KycService {
         user.setKycVerified(false);
         userRepository.save(user);
 
-        // Cascade: set owner's APPROVED trucks → INACTIVE
-        List<Truck> approvedTrucks = truckRepository.findByOwnerIdAndStatusAndDeletedAtIsNull(
-                userId, TruckStatus.APPROVED);
-        if (!approvedTrucks.isEmpty()) {
-            approvedTrucks.forEach(t -> t.setStatus(TruckStatus.INACTIVE));
-            truckRepository.saveAll(approvedTrucks);
-            log.info("Cascaded KYC rejection: {} trucks set INACTIVE for userId={}", approvedTrucks.size(), userId);
+        // Cascade: set owner's AVAILABLE trucks → UNAVAILABLE
+        List<Truck> availableTrucks = truckRepository.findByOwnerIdAndStatusAndDeletedAtIsNull(
+                userId, TruckStatus.AVAILABLE);
+        if (!availableTrucks.isEmpty()) {
+            availableTrucks.forEach(t -> t.setStatus(TruckStatus.UNAVAILABLE));
+            truckRepository.saveAll(availableTrucks);
+            log.info("Cascaded KYC rejection: {} trucks set UNAVAILABLE for userId={}", availableTrucks.size(), userId);
         }
 
         log.info("KYC rejected: userId={}, by adminId={}, reason={}", userId, adminId, reason);

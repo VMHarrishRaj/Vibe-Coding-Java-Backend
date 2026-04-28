@@ -14,14 +14,12 @@ import java.util.UUID;
  * Truck Entity — maps to the 'trucks' table.
  *
  * Represents a truck listed by an OWNER on the platform.
- * Must be APPROVED by admin before it is visible to renters.
  *
  * LIFECYCLE:
- * Owner adds truck → PENDING_APPROVAL → Admin approves → APPROVED (visible)
- * → Admin rejects → REJECTED
- * Owner can deactivate → INACTIVE (hidden from search)
- *
- * GUARD: Only KYC-verified owners can add trucks.
+ * Owner adds truck → AVAILABLE (live immediately)
+ * Owner sets maintenance → UNAVAILABLE
+ * Admin suspends owner → owner's AVAILABLE trucks → UNAVAILABLE (suspendedByAdmin=true)
+ * Admin re-activates owner → UNAVAILABLE trucks with suspendedByAdmin=true → AVAILABLE
  */
 @Entity
 @Table(name = "trucks")
@@ -90,13 +88,10 @@ public class Truck extends BaseAuditEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     @Builder.Default
-    private TruckStatus status = TruckStatus.PENDING_APPROVAL;
+    private TruckStatus status = TruckStatus.AVAILABLE;
 
     @Column(columnDefinition = "TEXT")
     private String description;
-
-    @Column(name = "rejection_reason", columnDefinition = "TEXT")
-    private String rejectionReason;
 
     @Column(name = "year")
     private Integer year;
@@ -127,8 +122,8 @@ public class Truck extends BaseAuditEntity {
     private boolean insured = false;
 
     /**
-     * True when this truck was set INACTIVE because the owner was suspended by admin.
-     * Used to restore the truck to APPROVED when the owner is re-activated.
+     * True when this truck was set UNAVAILABLE because the owner was suspended by admin.
+     * Used to restore the truck to AVAILABLE when the owner is re-activated.
      * Never set by owner-initiated deactivation.
      */
     @Column(name = "suspended_by_admin", nullable = false)
