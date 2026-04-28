@@ -4,11 +4,15 @@ import com.truckhire.common.dto.ApiResponse;
 import com.truckhire.common.dto.PagedResponse;
 import com.truckhire.common.util.SecurityUtils;
 import com.truckhire.modules.auth.dto.AuthResponse;
+import com.truckhire.modules.booking.service.BookingService;
+import com.truckhire.modules.payment.dto.AdminPaymentListResponse;
+import com.truckhire.modules.payment.service.PaymentService;
 import com.truckhire.modules.user.dto.AdminCreateUserRequest;
 import com.truckhire.modules.user.dto.AdminCreateUserResponse;
 import com.truckhire.modules.user.dto.AdminUserListResponse;
 import com.truckhire.modules.user.dto.CreateAdminRequest;
 import com.truckhire.modules.user.dto.KycDocumentResponse;
+import com.truckhire.modules.user.dto.RenterBookingSummaryResponse;
 import com.truckhire.modules.user.dto.UserProfileResponse;
 import com.truckhire.modules.user.entity.User;
 import com.truckhire.modules.user.service.KycService;
@@ -48,6 +52,8 @@ public class AdminUserController {
 
     private final UserService userService;
     private final KycService kycService;
+    private final BookingService bookingService;
+    private final PaymentService paymentService;
 
     /**
      * GET
@@ -184,5 +190,49 @@ public class AdminUserController {
         User admin = SecurityUtils.getCurrentUser();
         kycService.rejectKyc(id, admin.getId(), reason);
         return ResponseEntity.ok(ApiResponse.success("KYC rejected", null));
+    }
+
+    // ═══════════════════════════════════════
+    // RENTER DETAIL — BOOKINGS & PAYMENTS
+    // ═══════════════════════════════════════
+
+    /**
+     * GET /api/v1/admin/users/{id}/bookings
+     *
+     * Returns booking statistics + paginated booking list for a specific renter.
+     * Used by the admin Client/Renter detail page.
+     *
+     * Response:
+     *   stats.totalBookings    — all-time booking count
+     *   stats.totalSpent       — sum of totalAmount for COMPLETED bookings
+     *   stats.avgBookingValue  — totalSpent / completed count (null if no completed bookings)
+     *   stats.lastBookingDate  — createdAt of the most recent booking
+     *   bookings               — paginated BookingListResponse list
+     */
+    @GetMapping("/{id}/bookings")
+    public ResponseEntity<ApiResponse<RenterBookingSummaryResponse>> getRenterBookings(
+            @PathVariable UUID id,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+
+        RenterBookingSummaryResponse response = bookingService.getAdminRenterBookings(id, pageable);
+        return ResponseEntity.ok(ApiResponse.success("Renter bookings retrieved", response));
+    }
+
+    /**
+     * GET /api/v1/admin/users/{id}/payments
+     *
+     * Returns paginated invoice list (CHARGE + MILEAGE_TOPUP transactions) for a specific renter.
+     * Used by the admin Client/Renter detail page — Invoice Details table.
+     *
+     * Each row: id (use as chargeTransactionId for download), invoiceNumber, bookingNumber,
+     *           total, paymentDate, paymentStatus, displayPaymentStatus, settlementStatus
+     */
+    @GetMapping("/{id}/payments")
+    public ResponseEntity<ApiResponse<PagedResponse<AdminPaymentListResponse>>> getRenterPayments(
+            @PathVariable UUID id,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+
+        PagedResponse<AdminPaymentListResponse> response = paymentService.getAdminRenterPayments(id, pageable);
+        return ResponseEntity.ok(ApiResponse.success("Renter payments retrieved", response));
     }
 }

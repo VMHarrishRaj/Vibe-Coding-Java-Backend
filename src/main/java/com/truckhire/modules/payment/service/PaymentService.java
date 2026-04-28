@@ -781,6 +781,31 @@ public class PaymentService {
     // ADMIN PAYMENTS LIST + DETAIL
     // ═══════════════════════════════════════
 
+    /**
+     * Admin: renter detail page — paginated invoice list for a specific renter.
+     */
+    @Transactional(readOnly = true)
+    public com.truckhire.common.dto.PagedResponse<com.truckhire.modules.payment.dto.AdminPaymentListResponse>
+            getAdminRenterPayments(UUID renterId, org.springframework.data.domain.Pageable pageable) {
+
+        org.springframework.data.domain.Page<PaymentTransaction> page =
+                transactionRepository.findChargesByRenterId(renterId, pageable);
+
+        java.util.List<com.truckhire.modules.payment.dto.AdminPaymentListResponse> content =
+                page.getContent().stream()
+                        .map(this::mapToAdminPaymentListResponse)
+                        .collect(java.util.stream.Collectors.toList());
+
+        return com.truckhire.common.dto.PagedResponse.<com.truckhire.modules.payment.dto.AdminPaymentListResponse>builder()
+                .content(content)
+                .pageNumber(page.getNumber())
+                .pageSize(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .last(page.isLast())
+                .build();
+    }
+
     @Transactional(readOnly = true)
     public com.truckhire.common.dto.PagedResponse<com.truckhire.modules.payment.dto.AdminPaymentListResponse>
             getAdminPayments(String search, String settlementStatus, org.springframework.data.domain.Pageable pageable) {

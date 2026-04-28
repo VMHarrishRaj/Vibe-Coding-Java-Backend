@@ -455,6 +455,43 @@ public class BookingService {
     }
 
     /**
+     * Admin: renter detail page — booking statistics + paginated booking list for a specific renter.
+     */
+    @Transactional(readOnly = true)
+    public com.truckhire.modules.user.dto.RenterBookingSummaryResponse getAdminRenterBookings(
+            UUID renterId, Pageable pageable) {
+
+        // Validate renter exists
+        userRepository.findById(renterId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", renterId));
+
+        // Stats — one query
+        Object[] stats = bookingRepository.getRenterBookingStats(renterId);
+        long totalBookings = stats[0] != null ? ((Number) stats[0]).longValue() : 0L;
+        java.math.BigDecimal totalSpent = stats[1] != null ? (java.math.BigDecimal) stats[1] : java.math.BigDecimal.ZERO;
+        long completedCount = stats[2] != null ? ((Number) stats[2]).longValue() : 0L;
+        String lastBookingDate = stats[3] != null ? stats[3].toString() : null;
+
+        java.math.BigDecimal avgBookingValue = completedCount > 0
+                ? totalSpent.divide(java.math.BigDecimal.valueOf(completedCount), 2, java.math.RoundingMode.HALF_UP)
+                : null;
+
+        // Paginated list
+        Page<Booking> page = bookingRepository.findByRenterIdOrderByCreatedAtDesc(renterId, pageable);
+        PagedResponse<BookingListResponse> bookings = buildListPagedResponse(page);
+
+        return com.truckhire.modules.user.dto.RenterBookingSummaryResponse.builder()
+                .stats(com.truckhire.modules.user.dto.RenterBookingSummaryResponse.Stats.builder()
+                        .totalBookings(totalBookings)
+                        .totalSpent(totalSpent)
+                        .avgBookingValue(avgBookingValue)
+                        .lastBookingDate(lastBookingDate)
+                        .build())
+                .bookings(bookings)
+                .build();
+    }
+
+    /**
      * Admin: paginated list of all bookings, optional status filter.
      * Accepts a list of statuses so the "Upcoming" tab can filter on
      * CONFIRMED + AWAITING_APPROVAL simultaneously.
