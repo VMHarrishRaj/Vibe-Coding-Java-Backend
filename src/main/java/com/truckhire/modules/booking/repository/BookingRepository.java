@@ -97,7 +97,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             WHERE b.renter_id = :renterId
               AND b.deleted_at IS NULL
             """, nativeQuery = true)
-    Object[] getRenterBookingStats(@Param("renterId") UUID renterId);
+    List<Object[]> getRenterBookingStats(@Param("renterId") UUID renterId);
 
     // Owner's bookings (paginated, newest first) — excludes PENDING (unpaid) bookings.
     // Renter has not yet paid for PENDING bookings so the owner should not see them yet.

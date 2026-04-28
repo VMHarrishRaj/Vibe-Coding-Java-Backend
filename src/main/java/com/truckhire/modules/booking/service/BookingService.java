@@ -465,10 +465,11 @@ public class BookingService {
         userRepository.findById(renterId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", renterId));
 
-        // Stats — one query
-        Object[] stats = bookingRepository.getRenterBookingStats(renterId);
+        // Stats — one query; native query returns List<Object[]>, take first (and only) row
+        List<Object[]> statsRows = bookingRepository.getRenterBookingStats(renterId);
+        Object[] stats = statsRows.isEmpty() ? new Object[4] : statsRows.get(0);
         long totalBookings = stats[0] != null ? ((Number) stats[0]).longValue() : 0L;
-        java.math.BigDecimal totalSpent = stats[1] != null ? (java.math.BigDecimal) stats[1] : java.math.BigDecimal.ZERO;
+        java.math.BigDecimal totalSpent = stats[1] != null ? new java.math.BigDecimal(stats[1].toString()) : java.math.BigDecimal.ZERO;
         long completedCount = stats[2] != null ? ((Number) stats[2]).longValue() : 0L;
         String lastBookingDate = stats[3] != null ? stats[3].toString() : null;
 
