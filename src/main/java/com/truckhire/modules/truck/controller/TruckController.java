@@ -22,6 +22,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -101,7 +102,7 @@ public class TruckController {
 
     /**
      * PUT /api/v1/trucks/{id}/deactivate
-     * Deactivate an APPROVED truck (owner only).
+     * Set truck to maintenance/UNAVAILABLE (owner only).
      */
     @PutMapping("/{id}/deactivate")
     @PreAuthorize("hasRole('OWNER')")
@@ -109,6 +110,19 @@ public class TruckController {
         User owner = SecurityUtils.getCurrentUser();
         truckService.deactivateTruck(owner.getId(), id);
         return ResponseEntity.ok(ApiResponse.success("Truck deactivated", null));
+    }
+
+    /**
+     * PUT /api/v1/trucks/{id}/activate
+     * Bring a maintenance truck back to AVAILABLE (owner only).
+     * Blocked if the truck was suspended by admin — owner must contact support.
+     */
+    @PutMapping("/{id}/activate")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<ApiResponse<Void>> activateTruck(@PathVariable UUID id) {
+        User owner = SecurityUtils.getCurrentUser();
+        truckService.reactivateTruck(owner.getId(), id);
+        return ResponseEntity.ok(ApiResponse.success("Truck activated", null));
     }
 
     /**
@@ -143,8 +157,8 @@ public class TruckController {
             @RequestParam(required = false) BigDecimal maxPrice,
             @RequestParam(required = false) Integer minCapacity,
             @RequestParam(required = false) String sortBy,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate availableFrom,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate availableTo,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime availableFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime availableTo,
             @RequestParam(required = false) Boolean insured,
             @PageableDefault(size = 20) Pageable pageable) {
 
@@ -183,7 +197,6 @@ public class TruckController {
     /**
      * POST /api/v1/trucks/{id}/photos
      * Upload a truck photo. documentType defaults to PHOTO.
-     * If truck is currently APPROVED, reverts status to PENDING_APPROVAL for admin re-review.
      */
     @PostMapping("/{id}/photos")
     @PreAuthorize("hasRole('OWNER')")
@@ -214,7 +227,6 @@ public class TruckController {
     /**
      * POST /api/v1/trucks/{id}/documents
      * Upload a legal document (RC, INSURANCE, PERMIT). documentType param required.
-     * If truck is currently APPROVED, reverts status to PENDING_APPROVAL for admin re-review.
      */
     @PostMapping("/{id}/documents")
     @PreAuthorize("hasRole('OWNER')")

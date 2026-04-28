@@ -51,21 +51,16 @@ public class AdminDashboardService {
 
         // ── Vehicle Availability widget ──
         long rentedVehicles = truckRepository.countRentedTrucks();
-        // Available = APPROVED trucks minus those currently rented out
-        long approvedVehicles = truckRepository.countByStatusAndDeletedAtIsNull(TruckStatus.APPROVED);
-        long availableVehicles = approvedVehicles - rentedVehicles;
-        // Not Available = INACTIVE + PENDING_APPROVAL + REJECTED
-        // REJECTED included: owner may resolve and re-submit in future; keeps pie total == totalVehicles
-        long notAvailableVehicles = truckRepository.countByStatusAndDeletedAtIsNull(TruckStatus.INACTIVE)
-                + truckRepository.countByStatusAndDeletedAtIsNull(TruckStatus.PENDING_APPROVAL)
-                + truckRepository.countByStatusAndDeletedAtIsNull(TruckStatus.REJECTED);
-        // totalVehicles = sum of pie slices — single source of truth, no stale countByDeletedAtIsNull()
+        // Available = AVAILABLE trucks minus those currently rented out
+        long activeTrucks = truckRepository.countByStatusAndDeletedAtIsNull(TruckStatus.AVAILABLE);
+        long availableVehicles = activeTrucks - rentedVehicles;
+        long notAvailableVehicles = truckRepository.countByStatusAndDeletedAtIsNull(TruckStatus.UNAVAILABLE);
         long totalVehicles = availableVehicles + rentedVehicles + notAvailableVehicles;
 
         return AdminDashboardStatsResponse.builder()
                 .totalRevenue(totalRevenue)
                 .totalVehicles(totalVehicles)
-                .approvedVehicles(approvedVehicles)
+                .approvedVehicles(activeTrucks)
                 .totalClients(totalClients)
                 .activeOwnerCount(activeOwnerCount)
                 .totalBookings(totalBookings)

@@ -30,10 +30,8 @@ public class OwnerDashboardResponse {
 
     // ── Truck summary ──
     private long totalTrucks;
-    private long approvedTrucks;
-    private long pendingTrucks;
-    private long rejectedTrucks;
-    private long inactiveTrucks;
+    private long availableTrucks;
+    private long unavailableTrucks;
 
     // ── Booking summary — counts by lifecycle stage ──
     private long awaitingApprovalBookings;  // renter paid, owner has not yet approved

@@ -14,6 +14,6 @@ public class OwnedVehicleSummary {
     private String registrationNumber;
     private String model;
     private Integer capacityTons;
-    private String status;   // PENDING_APPROVAL, APPROVED, REJECTED, INACTIVE
+    private String status;   // AVAILABLE, UNAVAILABLE
     private Long rentals;    // count of ACTIVE + COMPLETED bookings
 }

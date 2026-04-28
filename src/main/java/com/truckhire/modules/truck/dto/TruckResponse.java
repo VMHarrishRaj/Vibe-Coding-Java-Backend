@@ -55,8 +55,7 @@ public class TruckResponse {
     private String transmission;
 
     // ── Status ──
-    private String status; // "PENDING_APPROVAL", "APPROVED", "REJECTED", "INACTIVE"
-    private String rejectionReason;
+    private String status; // "AVAILABLE", "UNAVAILABLE"
     private String description;
 
     /** True when the owner has attached an active insurance plan to this truck */

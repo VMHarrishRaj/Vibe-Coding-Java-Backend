@@ -121,7 +121,7 @@ public class BookingService {
         Truck truck = truckRepository.findByIdAndDeletedAtIsNull(request.getTruckId())
                 .orElseThrow(() -> new ResourceNotFoundException("Truck", "id", request.getTruckId()));
 
-        if (truck.getStatus() != TruckStatus.APPROVED) {
+        if (truck.getStatus() != TruckStatus.AVAILABLE) {
             throw new BusinessException("TRUCK_NOT_AVAILABLE",
                     "This truck is not available for booking");
         }

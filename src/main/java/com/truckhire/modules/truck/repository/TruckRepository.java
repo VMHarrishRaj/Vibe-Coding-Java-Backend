@@ -13,6 +13,7 @@ import org.springframework.stereotype.Repository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -56,25 +57,20 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
     // For KYC rejection cascade: find owner's APPROVED trucks
     List<Truck> findByOwnerIdAndStatusAndDeletedAtIsNull(UUID ownerId, TruckStatus status);
 
-    // ── Enhanced public search (Phase 5) ──
-    // Returns APPROVED, INACTIVE, and PENDING_APPROVAL trucks (not REJECTED).
+    // ── Public search ──
+    // Returns AVAILABLE and UNAVAILABLE trucks.
     // Availability enrichment (AVAILABLE / RENTED / UNAVAILABLE) is done in
     // the service layer after this query runs — one extra query per page, not N+1.
     // All filter params are optional — passing null skips that condition.
-    // Sorting is handled by the Pageable passed from the service layer.
     // :cityLower must be pre-lowercased by the caller (or null to skip filter).
-    // Avoids LOWER(:city) on a nullable bind param — Hibernate 6 binds null as
-    // bytea on PostgreSQL, causing "function lower(bytea) does not exist".
     //
-    // Two variants: without date filter (when no dates provided) and with date filter.
-    // This avoids PostgreSQL's inability to infer the type of a nullable LocalDate
-    // bind parameter used in a ":param IS NULL OR ..." guard ("could not determine
-    // data type of parameter $N"). Splitting into two methods eliminates the guard.
+    // Two variants: without date filter and with date filter (avoids PostgreSQL
+    // nullable LocalDate bind param type inference issues).
     @Query("""
             SELECT t FROM Truck t
             JOIN FETCH t.owner
             JOIN FETCH t.vehicleType
-            WHERE t.status IN ('APPROVED', 'INACTIVE', 'PENDING_APPROVAL')
+            WHERE t.status IN ('AVAILABLE', 'UNAVAILABLE')
               AND t.deletedAt IS NULL
               AND (:cityLower IS NULL OR LOWER(t.locationCity) = :cityLower)
               AND (:vehicleType IS NULL OR t.vehicleType.name = :vehicleType)
@@ -98,7 +94,7 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
             SELECT t FROM Truck t
             JOIN FETCH t.owner
             JOIN FETCH t.vehicleType
-            WHERE t.status IN ('APPROVED', 'INACTIVE', 'PENDING_APPROVAL')
+            WHERE t.status IN ('AVAILABLE', 'UNAVAILABLE')
               AND t.deletedAt IS NULL
               AND (:cityLower IS NULL OR LOWER(t.locationCity) = :cityLower)
               AND (:vehicleType IS NULL OR t.vehicleType.name = :vehicleType)
@@ -186,6 +182,77 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
     @Query(value = "SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType WHERE t.status = :status AND t.deletedAt IS NULL",
             countQuery = "SELECT COUNT(t) FROM Truck t WHERE t.status = :status AND t.deletedAt IS NULL")
     Page<Truck> findByStatusActiveWithOwnerNoOrder(@Param("status") TruckStatus status, Pageable pageable);
+
+    // Admin multi-status filter (e.g. "Not Available" → UNAVAILABLE)
+    @Query(value = "SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType WHERE t.status IN :statuses AND t.deletedAt IS NULL",
+            countQuery = "SELECT COUNT(t) FROM Truck t WHERE t.status IN :statuses AND t.deletedAt IS NULL")
+    Page<Truck> findByStatusesActiveWithOwner(@Param("statuses") Collection<TruckStatus> statuses, Pageable pageable);
+
+    @Query(value = """
+            SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType
+            WHERE t.deletedAt IS NULL
+              AND t.status IN :statuses
+              AND (LOWER(t.registrationNumber) LIKE :q
+                OR LOWER(t.model) LIKE :q
+                OR LOWER(t.make) LIKE :q
+                OR LOWER(t.owner.fullname) LIKE :q)
+            """,
+            countQuery = """
+            SELECT COUNT(t) FROM Truck t
+            WHERE t.deletedAt IS NULL
+              AND t.status IN :statuses
+              AND (LOWER(t.registrationNumber) LIKE :q
+                OR LOWER(t.model) LIKE :q
+                OR LOWER(t.make) LIKE :q
+                OR LOWER(t.owner.fullname) LIKE :q)
+            """)
+    Page<Truck> searchByKeywordAndStatuses(
+            @Param("q") String q,
+            @Param("statuses") Collection<TruckStatus> statuses,
+            Pageable pageable);
+
+    @Query(value = """
+            SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType
+            WHERE t.deletedAt IS NULL
+              AND t.status IN :statuses
+              AND t.vehicleType.name = :vehicleType
+            """,
+            countQuery = """
+            SELECT COUNT(t) FROM Truck t JOIN t.vehicleType
+            WHERE t.deletedAt IS NULL
+              AND t.status IN :statuses
+              AND t.vehicleType.name = :vehicleType
+            """)
+    Page<Truck> findByStatusesAndVehicleType(
+            @Param("statuses") Collection<TruckStatus> statuses,
+            @Param("vehicleType") String vehicleType,
+            Pageable pageable);
+
+    @Query(value = """
+            SELECT t FROM Truck t JOIN FETCH t.owner JOIN FETCH t.vehicleType
+            WHERE t.deletedAt IS NULL
+              AND t.status IN :statuses
+              AND t.vehicleType.name = :vehicleType
+              AND (LOWER(t.registrationNumber) LIKE :q
+                OR LOWER(t.model) LIKE :q
+                OR LOWER(t.make) LIKE :q
+                OR LOWER(t.owner.fullname) LIKE :q)
+            """,
+            countQuery = """
+            SELECT COUNT(t) FROM Truck t JOIN t.owner JOIN t.vehicleType
+            WHERE t.deletedAt IS NULL
+              AND t.status IN :statuses
+              AND t.vehicleType.name = :vehicleType
+              AND (LOWER(t.registrationNumber) LIKE :q
+                OR LOWER(t.model) LIKE :q
+                OR LOWER(t.make) LIKE :q
+                OR LOWER(t.owner.fullname) LIKE :q)
+            """)
+    Page<Truck> searchByKeywordAndStatusesAndVehicleType(
+            @Param("q") String q,
+            @Param("statuses") Collection<TruckStatus> statuses,
+            @Param("vehicleType") String vehicleType,
+            Pageable pageable);
 
     // ── Admin vehicleType-aware queries (SCRUM-68 fix applied to admin path) ──
     // Nullable-guard pattern (:param IS NULL OR ...) is unreliable in Hibernate 6 /
@@ -293,14 +360,14 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
     // Admin dashboard: count non-deleted trucks by a specific status
     long countByStatusAndDeletedAtIsNull(TruckStatus status);
 
-    // Distinct cities for config/cities dropdown — only APPROVED non-deleted trucks
-    @Query("SELECT DISTINCT t.locationCity FROM Truck t WHERE t.status = com.truckhire.modules.truck.entity.TruckStatus.APPROVED AND t.deletedAt IS NULL ORDER BY t.locationCity ASC")
+    // Distinct cities for config/cities dropdown — only AVAILABLE non-deleted trucks
+    @Query("SELECT DISTINCT t.locationCity FROM Truck t WHERE t.status = com.truckhire.modules.truck.entity.TruckStatus.AVAILABLE AND t.deletedAt IS NULL ORDER BY t.locationCity ASC")
     List<String> findDistinctApprovedCities();
 
-    // Admin dashboard: count APPROVED trucks that have an ACTIVE booking today (rented right now)
+    // Admin dashboard: count AVAILABLE trucks that have an ACTIVE booking today (rented right now)
     @Query("""
             SELECT COUNT(DISTINCT t) FROM Truck t
-            WHERE t.status = 'APPROVED'
+            WHERE t.status = 'AVAILABLE'
               AND t.deletedAt IS NULL
               AND EXISTS (
                   SELECT 1 FROM Booking b
@@ -313,15 +380,14 @@ public interface TruckRepository extends JpaRepository<Truck, UUID> {
 
     // ── Owner suspension / re-activation bulk updates ──
 
-    // Suspend: flip all APPROVED trucks of an owner to INACTIVE and mark suspendedByAdmin.
-    // PENDING_APPROVAL and REJECTED trucks are left untouched — not yet live.
+    // Suspend: flip all AVAILABLE trucks of an owner to UNAVAILABLE and mark suspendedByAdmin.
     @Modifying
-    @Query("UPDATE Truck t SET t.status = com.truckhire.modules.truck.entity.TruckStatus.INACTIVE, t.suspendedByAdmin = true WHERE t.owner.id = :ownerId AND t.status = com.truckhire.modules.truck.entity.TruckStatus.APPROVED AND t.deletedAt IS NULL")
+    @Query("UPDATE Truck t SET t.status = com.truckhire.modules.truck.entity.TruckStatus.UNAVAILABLE, t.suspendedByAdmin = true WHERE t.owner.id = :ownerId AND t.status = com.truckhire.modules.truck.entity.TruckStatus.AVAILABLE AND t.deletedAt IS NULL")
     int suspendApprovedTrucksByOwner(@Param("ownerId") UUID ownerId);
 
-    // Re-activate: restore only trucks that were deactivated by the suspension.
+    // Re-activate: restore only trucks that were set UNAVAILABLE by the suspension.
     // Owner-manually-deactivated trucks (suspendedByAdmin = false) are left alone.
     @Modifying
-    @Query("UPDATE Truck t SET t.status = com.truckhire.modules.truck.entity.TruckStatus.APPROVED, t.suspendedByAdmin = false WHERE t.owner.id = :ownerId AND t.status = com.truckhire.modules.truck.entity.TruckStatus.INACTIVE AND t.suspendedByAdmin = true AND t.deletedAt IS NULL")
+    @Query("UPDATE Truck t SET t.status = com.truckhire.modules.truck.entity.TruckStatus.AVAILABLE, t.suspendedByAdmin = false WHERE t.owner.id = :ownerId AND t.status = com.truckhire.modules.truck.entity.TruckStatus.UNAVAILABLE AND t.suspendedByAdmin = true AND t.deletedAt IS NULL")
     int restoreSuspendedTrucksByOwner(@Param("ownerId") UUID ownerId);
 }
