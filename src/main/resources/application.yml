@@ -79,6 +79,7 @@ server:
   port: 8505  # Changed from 8080 — required for VM deployment (port 8080 conflicts with auth proxy)
   servlet:
     context-path: /api/v1
+  forward-headers-strategy: NATIVE  # trust X-Forwarded-Proto from reverse proxy so generated URLs use https://
 
 # ── Actuator (Health Checks) ──
 management:
