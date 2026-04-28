@@ -34,9 +34,10 @@ public class MyPaymentHistoryResponse {
     private String renterName;      // renter full name (OWNER only)
     private String startDate;       // booking start date (OWNER only)
     private String endDate;         // booking end date (OWNER only)
-    private BigDecimal grossAmount; // what renter paid before fee deduction (OWNER only)
+    private BigDecimal grossAmount;       // what renter paid before fee deduction (OWNER only)
     private BigDecimal platformFeePercent; // platform fee % at time of payout (OWNER only)
-    private BigDecimal amount;      // charged to renter (CHARGE/REFUND) or net paid to owner (PAYOUT)
+    private BigDecimal platformFee;       // absolute $ fee deducted — grossAmount - amount (OWNER only)
+    private BigDecimal amount;            // charged to renter (CHARGE/REFUND) or net paid to owner (PAYOUT)
     private String status;          // SUCCEEDED | REFUNDED | PENDING | FAILED | PAID_OUT | PAYOUT_PENDING
     private String failureReason;   // populated when status is PAYOUT_PENDING or FAILED (OWNER only)
     private String type;            // CHARGE | REFUND | PAYOUT

@@ -32,10 +32,14 @@ import org.springframework.data.domain.Sort;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -401,6 +405,79 @@ public class TruckService {
                         .build())
                 .collect(Collectors.toList());
 
+        // ── Fleet availability this month ──
+        // For each of the owner's non-deleted trucks, compute what % of days in the
+        // current calendar month are available (not occupied by a booking or blocked date).
+        // Two batch queries — no N+1 regardless of fleet size.
+        List<com.truckhire.modules.truck.entity.Truck> ownerTrucks =
+                truckRepository.findByOwnerIdAndDeletedAtIsNull(ownerId);
+
+        List<OwnerDashboardResponse.TruckAvailability> fleetAvailability = List.of();
+        if (!ownerTrucks.isEmpty()) {
+            YearMonth currentMonth = YearMonth.now();
+            LocalDate monthStart = currentMonth.atDay(1);
+            LocalDate monthEnd = currentMonth.atEndOfMonth();
+            int totalDays = currentMonth.lengthOfMonth();
+
+            List<UUID> truckIds = ownerTrucks.stream().map(com.truckhire.modules.truck.entity.Truck::getId).toList();
+
+            // Batch 1: all bookings overlapping this month for the owner's trucks
+            List<Booking> monthBookings = bookingRepository.findBookingsForTrucksInMonth(
+                    truckIds, monthStart.atStartOfDay(), monthEnd.atTime(23, 59, 59));
+
+            // Group booking date ranges by truck ID
+            Map<UUID, List<Booking>> bookingsByTruck = monthBookings.stream()
+                    .collect(Collectors.groupingBy(b -> b.getTruck().getId()));
+
+            // Batch 2: all owner-blocked dates in this month for the owner's trucks
+            List<Object[]> blockedRows = blockedDateRepository.findBlockedDatesByTruckIds(
+                    truckIds, monthStart, monthEnd);
+
+            Map<UUID, Set<LocalDate>> blockedByTruck = new HashMap<>();
+            for (Object[] row : blockedRows) {
+                UUID tid = (UUID) row[0];
+                LocalDate d = (LocalDate) row[1];
+                blockedByTruck.computeIfAbsent(tid, k -> new HashSet<>()).add(d);
+            }
+
+            fleetAvailability = ownerTrucks.stream()
+                    .map(truck -> {
+                        // Collect every day occupied by a booking (clipped to month boundaries)
+                        Set<LocalDate> occupiedDays = new HashSet<>();
+                        for (Booking b : bookingsByTruck.getOrDefault(truck.getId(), List.of())) {
+                            LocalDate bStart = b.getStartDate().toLocalDate().isBefore(monthStart)
+                                    ? monthStart : b.getStartDate().toLocalDate();
+                            LocalDate bEnd = b.getEndDate().toLocalDate().isAfter(monthEnd)
+                                    ? monthEnd : b.getEndDate().toLocalDate();
+                            LocalDate d = bStart;
+                            while (!d.isAfter(bEnd)) {
+                                occupiedDays.add(d);
+                                d = d.plusDays(1);
+                            }
+                        }
+                        // Add owner-blocked dates (de-duplicated by the Set)
+                        occupiedDays.addAll(blockedByTruck.getOrDefault(truck.getId(), Set.of()));
+
+                        int occupied = occupiedDays.size();
+                        int availableDays = totalDays - occupied;
+                        int pct = (int) Math.round((availableDays * 100.0) / totalDays);
+
+                        return OwnerDashboardResponse.TruckAvailability.builder()
+                                .truckId(truck.getId().toString())
+                                .truckName(
+                                        (truck.getMake() != null ? truck.getMake() + " " : "")
+                                        + truck.getModel())
+                                .registrationNumber(truck.getRegistrationNumber())
+                                .totalDaysInMonth(totalDays)
+                                .occupiedDays(occupied)
+                                .availableDays(availableDays)
+                                .availabilityPercent(pct)
+                                .build();
+                    })
+                    .sorted(Comparator.comparing(OwnerDashboardResponse.TruckAvailability::getTruckName))
+                    .collect(Collectors.toList());
+        }
+
         return OwnerDashboardResponse.builder()
                 // profile
                 .ownerId(owner.getId().toString())
@@ -425,6 +502,8 @@ public class TruckService {
                 .pendingPayoutAmount(pendingPayoutAmount)
                 // monthly revenue
                 .monthlyRevenue(monthlyRevenue)
+                // fleet availability this month
+                .fleetAvailability(fleetAvailability)
                 .build();
     }
 

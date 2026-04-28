@@ -984,9 +984,7 @@ public class PaymentService {
                 .total(txn.getAmount())
                 .ownerShare(txn.getOwnerAmount())
                 .platformShare(txn.getPlatformFee())
-                .ownerSharePercent(txn.getPlatformFee() != null
-                        ? java.math.BigDecimal.valueOf(100).subtract(settings.getPlatformFeePercent())
-                        : null)
+                .ownerSharePercent(java.math.BigDecimal.valueOf(100).subtract(settings.getPlatformFeePercent()))
                 .platformFeePercent(settings.getPlatformFeePercent())
                 .transactionId(txn.getGatewayPaymentId())
                 .paymentMethod(txn.getPaymentMethod())
@@ -1274,6 +1272,114 @@ public class PaymentService {
     }
 
     // ═══════════════════════════════════════
+    // OWNER PAYMENT DETAIL
+    // ═══════════════════════════════════════
+
+    /**
+     * GET /payments/{id} — owner-facing payment detail.
+     *
+     * {id} is the PAYOUT transaction UUID from the owner's payment list.
+     * Access check: the payout's booking owner must match ownerId.
+     * Card details come from the paired CHARGE transaction on the same booking.
+     * ownerShare / platformFee computed live from platform settings if payout
+     * has not yet been settled (PAYOUT_PENDING state).
+     */
+    @Transactional(readOnly = true)
+    public com.truckhire.modules.payment.dto.OwnerPaymentDetailResponse getOwnerPaymentDetail(
+            UUID payoutTransactionId, UUID ownerId) {
+
+        PaymentTransaction payout = transactionRepository.findById(payoutTransactionId)
+                .orElseThrow(() -> new ResourceNotFoundException("PaymentTransaction", "id", payoutTransactionId));
+
+        if (payout.getType() != PaymentType.PAYOUT) {
+            throw new BusinessException("INVALID_TRANSACTION_TYPE",
+                    "Payment detail is only available for PAYOUT transactions.");
+        }
+
+        Booking booking = payout.getBooking();
+        if (!booking.getOwner().getId().equals(ownerId)) {
+            throw new BusinessException("ACCESS_DENIED",
+                    "You do not have access to this payment.");
+        }
+
+        // Paired CHARGE transaction — source of card details and invoice number
+        Optional<PaymentTransaction> chargeOpt = transactionRepository
+                .findByBookingIdAndTypeAndStatus(booking.getId(), PaymentType.CHARGE, PaymentStatus.SUCCEEDED);
+
+        String invoiceNumber = chargeOpt.map(PaymentTransaction::getInvoiceNumber).orElse(null);
+        String invoiceDate   = chargeOpt.map(c -> c.getCreatedAt() != null ? c.getCreatedAt().toString() : null).orElse(null);
+        String paymentMethod = chargeOpt.map(PaymentTransaction::getPaymentMethod).orElse(null);
+        String cardLast4     = chargeOpt.map(PaymentTransaction::getCardLast4).orElse(null);
+        String transactionId = chargeOpt.map(PaymentTransaction::getGatewayPaymentId).orElse(null);
+
+        // mileageAmount — from paired MILEAGE_TOPUP if it exists and is SUCCEEDED
+        Optional<PaymentTransaction> mileageOpt = transactionRepository
+                .findMileageByBookingId(booking.getId());
+        BigDecimal mileageAmount = mileageOpt
+                .filter(m -> m.getStatus() == PaymentStatus.SUCCEEDED)
+                .map(PaymentTransaction::getAmount)
+                .orElse(null);
+
+        // Gross total = booking.totalAmount if set (includes mileage), else dayAmount
+        BigDecimal totalAmount = booking.getTotalAmount() != null
+                ? booking.getTotalAmount()
+                : booking.getDayAmount();
+
+        // Owner share / platform fee — use settled values if available, else compute live
+        PlatformSettings settings = platformSettingsService.getSettings();
+        BigDecimal ownerShareAmt;
+        BigDecimal portalCommission;
+        if (payout.getOwnerAmount() != null && payout.getPlatformFee() != null) {
+            ownerShareAmt   = payout.getOwnerAmount();
+            portalCommission = payout.getPlatformFee();
+        } else {
+            portalCommission = totalAmount
+                    .multiply(settings.getPlatformFeePercent())
+                    .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+            ownerShareAmt = totalAmount.subtract(portalCommission);
+        }
+
+        BigDecimal ownerSharePercent = BigDecimal.valueOf(100).subtract(settings.getPlatformFeePercent());
+
+        com.truckhire.modules.truck.entity.Truck truck = booking.getTruck();
+        String truckModel = (truck.getMake() != null ? truck.getMake() + " " : "") + truck.getModel();
+
+        String displayStatus = payout.getStatus() == PaymentStatus.PAID_OUT ? "Completed" : "Pending";
+
+        return com.truckhire.modules.payment.dto.OwnerPaymentDetailResponse.builder()
+                .payoutTransactionId(payout.getId().toString())
+                .invoiceNumber(invoiceNumber)
+                .bookingNumber(booking.getBookingNumber())
+                .invoiceDate(invoiceDate)
+                .status(payout.getStatus().name())
+                .displayStatus(displayStatus)
+                .paymentMethod(paymentMethod)
+                .cardLast4(cardLast4)
+                .transactionId(transactionId)
+                .gateway(payout.getGateway() != null ? payout.getGateway().name() : null)
+                .truckModel(truckModel)
+                .truckRegistration(truck.getRegistrationNumber())
+                .renterName(booking.getRenter() != null ? booking.getRenter().getFullname() : null)
+                .pricePerDay(booking.getPricePerDay())
+                .totalDays(booking.getTotalDays())
+                .startDate(booking.getStartDate() != null ? booking.getStartDate().toLocalDate().toString() : null)
+                .endDate(booking.getEndDate() != null ? booking.getEndDate().toLocalDate().toString() : null)
+                .pickupLocation(booking.getPickupLocation())
+                .dropoffLocation(booking.getDropoffLocation())
+                .baseRental(booking.getDayAmount())
+                .mileageAmount(mileageAmount)
+                .insuranceCost(booking.getInsuranceCost())
+                .additionalServicesCost(booking.getAdditionalServicesCost())
+                .tax(booking.getTax())
+                .totalAmount(totalAmount)
+                .ownerShare(ownerShareAmt)
+                .ownerSharePercent(ownerSharePercent)
+                .portalCommission(portalCommission)
+                .platformFeePercent(settings.getPlatformFeePercent())
+                .build();
+    }
+
+    // ═══════════════════════════════════════
     // MY PAYMENT HISTORY (RENTER + OWNER)
     // ═══════════════════════════════════════
 
@@ -1364,9 +1470,24 @@ public class PaymentService {
                         .ifPresent(charge -> builder.grossAmount(charge.getAmount()));
             }
 
-            // platformFeePercent — from current platform settings
+            // platformFeePercent + absolute platformFee — always from current platform settings.
+            // platformFee = grossAmount * (feePercent / 100), giving the owner the exact $ deducted.
             PlatformSettings settings = platformSettingsService.getSettings();
             builder.platformFeePercent(settings.getPlatformFeePercent());
+
+            // Use the stored platformFee on the PAYOUT transaction if already settled;
+            // otherwise compute it live from grossAmount so it's always present pre-payout.
+            if (txn.getPlatformFee() != null) {
+                builder.platformFee(txn.getPlatformFee());
+            } else {
+                BigDecimal gross = builder.build().getGrossAmount();
+                if (gross != null) {
+                    BigDecimal fee = gross
+                            .multiply(settings.getPlatformFeePercent())
+                            .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+                    builder.platformFee(fee);
+                }
+            }
         }
 
         return builder.build();
