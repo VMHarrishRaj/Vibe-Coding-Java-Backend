@@ -6,6 +6,7 @@ import com.truckhire.common.util.SecurityUtils;
 import com.truckhire.modules.payment.dto.DownloadTokenResponse;
 import com.truckhire.modules.payment.dto.LinkBankAccountRequest;
 import com.truckhire.modules.payment.dto.MyPaymentHistoryResponse;
+import com.truckhire.modules.payment.dto.OwnerPaymentDetailResponse;
 import com.truckhire.modules.payment.dto.RenterPaymentPageResponse;
 import com.truckhire.modules.payment.dto.StripeConnectResponse;
 import com.truckhire.modules.payment.dto.PaymentInitiatedResponse;
@@ -120,6 +121,21 @@ public class PaymentController {
             PagedResponse<MyPaymentHistoryResponse> response = paymentService.getMyPayments(currentUser, pageable);
             return ResponseEntity.ok(ApiResponse.success("Payment history retrieved", response));
         }
+    }
+
+    /**
+     * GET /payments/{id}
+     * Owner-facing payment detail — full breakdown for a single payout transaction.
+     * {id} is the PAYOUT transaction UUID from GET /payments/mine (OWNER role).
+     * Scoped: only the owner of the booking may access their own payout details.
+     */
+    @GetMapping("/payments/{id}")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<ApiResponse<OwnerPaymentDetailResponse>> getOwnerPaymentDetail(
+            @PathVariable UUID id) {
+        UUID ownerId = SecurityUtils.getCurrentUser().getId();
+        OwnerPaymentDetailResponse response = paymentService.getOwnerPaymentDetail(id, ownerId);
+        return ResponseEntity.ok(ApiResponse.success("Payment detail retrieved", response));
     }
 
     /**
