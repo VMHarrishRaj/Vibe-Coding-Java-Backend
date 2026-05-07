@@ -12,7 +12,7 @@ pipeline {
 
         stage('Docker Compose Build') {
             steps {
-                sh 'docker-compose up -d --build'
+                sh 'docker-compose up app -d --build'
             }
         }
 
