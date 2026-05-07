@@ -1,53 +1,45 @@
-# ═══════════════════════════════════════════════════
-# Docker Compose - TruckRental Dev Environment
-# ═══════════════════════════════════════════════════
-#
-# WHAT THIS DOES:
-# Starts PostgreSQL and Redis in Docker containers
-# so you don't need to install them on your machine.
-#
-# HOW TO USE:
-#   docker compose up -d       ← Start in background
-#   docker compose down        ← Stop
-#   docker compose logs -f     ← Watch logs
-#
-# NOTE: Requires Docker Desktop installed.
-#       If not using Docker, install PostgreSQL and Redis directly.
-# ═══════════════════════════════════════════════════
+version: "3.9"
 
 services:
-  # ── PostgreSQL Database ──
-  postgres:
-    image: postgres:15-alpine
-    container_name: truckhire-postgres
-    environment:
-      POSTGRES_DB: truckhire_dev
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+  app:
+    build: .
+    container_name: java_app
     ports:
-      - "5432:5432"           # host:container
-    volumes:
-      - postgres_data:/var/lib/postgresql/data   # Persist data across restarts
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - "8087:8505"
+    env_file:
+      - .env
+    depends_on:
+      - postgres_db
+      - redis
+    networks:
+      - backend
 
-  # ── Redis Cache ──
-  redis:
-    image: redis:7-alpine
-    container_name: truckhire-redis
+  postgres_db:
+    image: postgres:15
+    container_name: postgres_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     ports:
-      - "6379:6379"
+      - "${DB_PORT}:5432"
     volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+
+  redis:
+    image: redis:7
+    container_name: redis_cache
+    ports:
+      - "${REDIS_PORT}:6379"
+    networks:
+      - backend
 
 volumes:
   postgres_data:
-  redis_data:
+
+networks:
+  backend:
+    external: true

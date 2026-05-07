@@ -1,0 +1,40 @@
+# ═══════════════════════════════════════
+# TruckHire .gitignore
+# ═══════════════════════════════════════
+
+# ── Build output ──
+target/
+*.class
+*.jar
+*.war
+
+# ── IDE files ──
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+*.swp
+*.swo
+*~
+
+# ── OS files ──
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Environment / Secrets ──
+.env
+*.env.local
+application-local.yml
+
+# ── Logs ──
+*.log
+logs/
+
+# ── Uploads (dev) ──
+uploads/
+
+# ── Maven wrapper ──
+!.mvn/wrapper/maven-wrapper.jar

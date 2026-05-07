@@ -1,0 +1,60 @@
+# ═══════════════════════════════════════════════════
+# TruckRental - DEV Profile Configuration
+# ═══════════════════════════════════════════════════
+# This file ONLY loads when spring.profiles.active=dev
+# It overrides values from application.yml
+#
+# DEV environment:
+#   - PostgreSQL on localhost
+#   - Redis on localhost
+#   - SQL logging enabled
+#   - Swagger UI enabled
+# ═══════════════════════════════════════════════════
+
+spring:
+  # ── Disable Redis auto-config in dev ──
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+
+  # ── PostgreSQL Connection ──
+  # Company PostgreSQL server
+  # Set DB_USERNAME and DB_PASSWORD as environment variables before running.
+  datasource:
+    url: jdbc:postgresql://35.225.235.66:5432/db_truck_rental
+    username: ${DB_USERNAME:usr_truck}
+    password: ${DB_PASSWORD}
+    # HikariCP connection pool (Spring Boot default)
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+
+  # ── Redis Connection ──
+  # You need Redis running on localhost:6379
+  # On Windows: Use Redis for Windows or WSL
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      # password: ${REDIS_PASSWORD:}  # uncomment if Redis requires auth
+
+  # ── JPA Dev Overrides ──
+  jpa:
+    show-sql: true
+    hibernate:
+      # In dev, let Hibernate validate the schema against entities
+      # Flyway creates the tables, Hibernate just checks they match
+      ddl-auto: validate
+
+  # ── Flyway Dev ──
+  flyway:
+    clean-disabled: false   # Allow clean in dev (NEVER in prod)
+
+# ── Logging ──
+logging:
+  level:
+    com.truckhire: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
