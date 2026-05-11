@@ -7,7 +7,7 @@ services:
     ports:
       - "8087:8505"
     env_file:
-      - .env
+      - /home/ubuntu/.env
     depends_on:
       - postgres_db
       - redis
